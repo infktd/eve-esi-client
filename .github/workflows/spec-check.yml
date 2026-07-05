@@ -1,0 +1,108 @@
+name: spec-check
+
+# Watches CCP's published spec. If it changed and the crate still builds
+# and tests cleanly against it, opens a PR containing the spec diff with an
+# additive/breaking annotation. If the new spec breaks the build, opens an
+# issue instead — a breaking spec change needs a human's design decision.
+#
+# This job never publishes anything; releases are release.yml, manual only.
+
+on:
+  schedule:
+    - cron: "17 */12 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Keep the old spec for diffing
+        run: cp spec/esi-latest.json /tmp/esi-old.json
+
+      - name: Fetch the live spec
+        run: cargo run -p xtask -- fetch-spec
+
+      - name: Detect changes
+        id: detect
+        run: |
+          if git diff --quiet -- spec/esi-latest.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and test against the new spec
+        id: build
+        if: steps.detect.outputs.changed == 'true'
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          cargo build 2>&1 | tee /tmp/build.log
+          cargo test 2>&1 | tee -a /tmp/build.log
+
+      - name: Annotate the change
+        id: annotate
+        if: steps.detect.outputs.changed == 'true' && steps.build.outcome == 'success'
+        run: |
+          {
+            echo 'report<<SPEC_DIFF_EOF'
+            cargo run -p xtask -- spec-diff /tmp/esi-old.json spec/esi-latest.json
+            echo 'SPEC_DIFF_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open a PR with the spec update
+        if: steps.detect.outputs.changed == 'true' && steps.build.outcome == 'success'
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: spec-update
+          title: "Spec update: ESI published a new spec"
+          commit-message: "Update ESI spec to latest published version"
+          add-paths: spec/esi-latest.json
+          body: |
+            Automated spec refresh. `cargo build` and `cargo test` pass
+            against this spec.
+
+            ${{ steps.annotate.outputs.report }}
+
+            Review the classification above before merging; it is a
+            heuristic to guide the semver decision, not a substitute for
+            reading the diff.
+
+      - name: Open an issue for a breaking spec change
+        if: steps.detect.outputs.changed == 'true' && steps.build.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh issue list --label spec-break --state open --json number --jq length | grep -qv '^0$'; then
+            echo "an open spec-break issue already exists; not filing another"
+            exit 0
+          fi
+          gh label create spec-break --description "CCP spec change broke the build" --color B60205 || true
+          tail -c 60000 /tmp/build.log > /tmp/build-tail.log
+          gh issue create \
+            --title "CCP spec change breaks the build" \
+            --label spec-break \
+            --body-file - <<EOF
+          The scheduled spec check fetched a new spec from CCP and the crate
+          no longer builds or passes tests against it. This needs a human
+          design decision (generator normalization rule, code change, or
+          upstream bug report) — see spec/README.md for the existing
+          normalization rules.
+
+          Build/test output (tail):
+
+          \`\`\`
+          $(cat /tmp/build-tail.log)
+          \`\`\`
+          EOF

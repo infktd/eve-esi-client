@@ -1,98 +1,19 @@
 //! Generates the ESI client from `spec/esi-latest.json` at compile time.
 //!
 //! The committed spec is exactly what CCP publishes (pretty-printed); the
-//! normalizations below happen in memory only. Each one is documented in
-//! `spec/README.md`.
+//! normalizations in `build_support/normalize.rs` happen in memory only and
+//! are documented in `spec/README.md`.
 
 use serde_json::Value;
 
+include!("build_support/normalize.rs");
+
 const SPEC_PATH: &str = "spec/esi-latest.json";
-
-const METHODS: [&str; 8] = [
-    "get", "put", "post", "delete", "patch", "head", "options", "trace",
-];
-
-fn for_each_operation(spec: &mut Value, mut f: impl FnMut(&mut Value)) {
-    let Some(paths) = spec.get_mut("paths").and_then(Value::as_object_mut) else {
-        return;
-    };
-    for path_item in paths.values_mut() {
-        for method in METHODS {
-            if let Some(op) = path_item.get_mut(method) {
-                f(op);
-            }
-        }
-    }
-}
-
-/// ESI declares every operation as `200` (typed payload) + `default` (the
-/// `Error` envelope). Progenitor counts `default` toward the *success*
-/// response group and asserts on two distinct success types, so rewrite
-/// `default` into explicit `4XX`/`5XX` error ranges — which is what ESI's
-/// `default` means — whenever an explicit 2xx response exists.
-///
-/// Additionally, progenitor supports only one success shape per operation.
-/// Two contract endpoints declare a typed `200` plus an empty `204`
-/// ("no longer available"); drop the bodiless secondary codes — at runtime
-/// they surface as `Error::UnexpectedResponse`, which callers can match on.
-fn normalize_responses(spec: &mut Value) {
-    for_each_operation(spec, |op| {
-        let Some(responses) = op.get_mut("responses").and_then(Value::as_object_mut) else {
-            return;
-        };
-        let two_xx: Vec<String> = responses
-            .keys()
-            .filter(|k| k.starts_with('2'))
-            .cloned()
-            .collect();
-        if two_xx.len() > 1 {
-            for code in two_xx.iter().filter(|c| c.as_str() != "200") {
-                println!("cargo:warning=dropping secondary success response {code}");
-                responses.remove(code);
-            }
-        }
-        if two_xx.is_empty() {
-            return;
-        }
-        let Some(default) = responses.remove("default") else {
-            return;
-        };
-        for range in ["4XX", "5XX"] {
-            if !responses.contains_key(range) {
-                responses.insert(range.to_string(), default.clone());
-            }
-        }
-    });
-}
-
-/// Every ESI operation requires an `X-Compatibility-Date` header whose only
-/// legal value is the date this spec was resolved at (it's an enum with a
-/// single variant). Making all 200+ generated methods take that argument
-/// would be noise with exactly one correct answer, so strip the parameter
-/// here and let the crate inject the header on every request instead (see
-/// `Client::builder` in lib.rs). The date itself is extracted from the spec
-/// and baked in as `COMPATIBILITY_DATE`.
-fn strip_compatibility_date_param(spec: &mut Value) -> String {
-    let date = spec
-        .pointer("/components/parameters/CompatibilityDate/schema/enum/0")
-        .and_then(Value::as_str)
-        .expect("spec no longer pins X-Compatibility-Date to a single value")
-        .to_string();
-    for_each_operation(spec, |op| {
-        let Some(params) = op.get_mut("parameters").and_then(Value::as_array_mut) else {
-            return;
-        };
-        params.retain(|p| {
-            p.pointer("/$ref").and_then(Value::as_str)
-                != Some("#/components/parameters/CompatibilityDate")
-        });
-    });
-    date
-}
 
 fn main() {
     println!("cargo:rerun-if-changed={SPEC_PATH}");
     println!("cargo:rerun-if-changed=build.rs");
+    println!("cargo:rerun-if-changed=build_support/normalize.rs");
 
     let file = std::fs::File::open(SPEC_PATH).expect("failed to open spec file");
     let mut raw: Value = serde_json::from_reader(file).expect("spec is not valid JSON");
@@ -104,7 +25,6 @@ fn main() {
         .and_then(Value::as_str)
         .expect("spec declares no server URL")
         .to_string();
-
     let sso_authorize_url = raw
         .pointer("/components/securitySchemes/OAuth2/flows/authorizationCode/authorizationUrl")
         .and_then(Value::as_str)
