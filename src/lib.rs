@@ -45,6 +45,9 @@ mod limiter;
 
 mod generated {
     #![allow(clippy::all)]
+    // CCP's endpoint descriptions become doc comments verbatim; some contain
+    // bare URLs and bracketed text that trip rustdoc's lints.
+    #![allow(rustdoc::broken_intra_doc_links, rustdoc::bare_urls)]
     include!(concat!(env!("OUT_DIR"), "/codegen.rs"));
 }
 

@@ -6,11 +6,23 @@ members = [".", "xtask"]
 name = "eve-esi"
 version = "0.1.0"
 edition = "2021"
-description = "Complete, spec-generated Rust client for EVE Online's ESI API"
+rust-version = "1.85"
+description = "Complete, spec-generated Rust client for EVE Online's ESI API, with SSO, error-limit backoff, and cache handling built in"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/jnejati/eve-esi"
-keywords = ["eve-online", "esi", "api-client"]
-categories = ["api-bindings"]
+keywords = ["eve-online", "esi", "api-client", "eve"]
+categories = ["api-bindings", "web-programming::http-client"]
+include = [
+    "src/**",
+    "build.rs",
+    "build_support/**",
+    "spec/esi-latest.json",
+    "spec/README.md",
+    "examples/**",
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+]
 
 [dependencies]
 base64 = "0.22"
