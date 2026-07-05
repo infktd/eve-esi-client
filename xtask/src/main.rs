@@ -2,7 +2,11 @@
 
 use std::io::Read;
 
-const SPEC_URL: &str = "https://esi.evetech.net/meta/openapi.json";
+// CCP publishes the same spec surface in several formats; use their native
+// OpenAPI 3.0 conversion because progenitor consumes 3.0.x only — this keeps
+// the 3.1-to-3.0 downconversion on CCP's side of the fence instead of ours.
+// (3.1 lives at /meta/openapi.json, YAML variants also exist.)
+const SPEC_URL: &str = "https://esi.evetech.net/meta/openapi-3.0.json";
 const SPEC_PATH: &str = "spec/esi-latest.json";
 
 fn main() {

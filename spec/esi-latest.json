@@ -98,9 +98,7 @@
     },
     "schemas": {
       "AccessListID": {
-        "examples": [
-          1
-        ],
+        "example": 1,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
@@ -147,9 +145,7 @@
         "type": "object"
       },
       "AllianceID": {
-        "examples": [
-          99000001
-        ],
+        "example": 99000001,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
@@ -240,33 +236,25 @@
         "uniqueItems": true
       },
       "ArchetypeID": {
-        "examples": [
-          33
-        ],
+        "example": 33,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
       },
       "AttributeID": {
-        "examples": [
-          209
-        ],
+        "example": 209,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
       },
       "BloodlineID": {
-        "examples": [
-          1
-        ],
+        "example": 1,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
       },
       "CharacterID": {
-        "examples": [
-          90000001
-        ],
+        "example": 90000001,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
@@ -3819,9 +3807,7 @@
         "properties": {
           "achievement_score": {
             "description": "Character's achievement score",
-            "examples": [
-              1234
-            ],
+            "example": 1234,
             "format": "int64",
             "type": "integer"
           },
@@ -3880,9 +3866,7 @@
           },
           "security_status": {
             "description": "Character's security status",
-            "examples": [
-              5
-            ],
+            "example": 5,
             "format": "double",
             "type": "number"
           }
@@ -3917,17 +3901,13 @@
         "properties": {
           "contributed": {
             "description": "Your contribution",
-            "examples": [
-              100
-            ],
+            "example": 100,
             "format": "int64",
             "type": "integer"
           },
           "last_modified": {
             "description": "Moment this information was last modified",
-            "examples": [
-              "2025-11-01T00:00:00Z"
-            ],
+            "example": "2025-11-01T00:00:00Z",
             "format": "date-time",
             "type": "string"
           },
@@ -3939,9 +3919,7 @@
               "Kicked",
               "Resigned"
             ],
-            "examples": [
-              "Committed"
-            ],
+            "example": "Committed",
             "type": "string",
             "x-enum-descriptions": [
               "An unspecified state",
@@ -3966,9 +3944,7 @@
           },
           "expires": {
             "description": "Moment the operation will expire",
-            "examples": [
-              "2026-02-23T12:00:00Z"
-            ],
+            "example": "2026-02-23T12:00:00Z",
             "format": "date-time",
             "type": "string"
           },
@@ -4222,9 +4198,7 @@
         "properties": {
           "amount": {
             "description": "Anarchy's cumulative amount (0-100)",
-            "examples": [
-              0
-            ],
+            "example": 0,
             "format": "int64",
             "type": "integer"
           },
@@ -4259,9 +4233,7 @@
         "properties": {
           "amount": {
             "description": "Development's cumulative amount (0-100)",
-            "examples": [
-              50
-            ],
+            "example": 50,
             "format": "int64",
             "type": "integer"
           },
@@ -4296,9 +4268,7 @@
         "properties": {
           "amount": {
             "description": "Amount of infomorphs",
-            "examples": [
-              100
-            ],
+            "example": 100,
             "format": "int64",
             "type": "integer"
           }
@@ -4376,17 +4346,13 @@
         "type": "object"
       },
       "CompatibilityDate": {
-        "examples": [
-          "2025-08-26"
-        ],
+        "example": "2025-08-26",
         "format": "date",
         "type": "string",
         "x-common-model": "true"
       },
       "ConstellationID": {
-        "examples": [
-          20000001
-        ],
+        "example": 20000001,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
@@ -4679,9 +4645,7 @@
         "type": "array"
       },
       "CorporationID": {
-        "examples": [
-          98777771
-        ],
+        "example": 98777771,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
@@ -8449,9 +8413,7 @@
         "properties": {
           "contributed": {
             "description": "Participant's contributed progress",
-            "examples": [
-              100
-            ],
+            "example": 100,
             "format": "int64",
             "type": "integer"
           },
@@ -8461,9 +8423,7 @@
           },
           "name": {
             "description": "Participant's name",
-            "examples": [
-              "Participant Name"
-            ],
+            "example": "Participant Name",
             "type": "string"
           },
           "state": {
@@ -8474,9 +8434,7 @@
               "Kicked",
               "Resigned"
             ],
-            "examples": [
-              "Committed"
-            ],
+            "example": "Committed",
             "type": "string",
             "x-enum-descriptions": [
               "An unspecified state",
@@ -8505,17 +8463,13 @@
         "properties": {
           "contributed": {
             "description": "Your contribution",
-            "examples": [
-              10
-            ],
+            "example": 10,
             "format": "int64",
             "type": "integer"
           },
           "last_modified": {
             "description": "Moment this information was last modified",
-            "examples": [
-              "2025-08-26T00:00:00Z"
-            ],
+            "example": "2025-08-26T00:00:00Z",
             "format": "date-time",
             "type": "string"
           }
@@ -8547,9 +8501,7 @@
         "properties": {
           "contributed": {
             "description": "Contributor's contributed progress",
-            "examples": [
-              10
-            ],
+            "example": 10,
             "format": "int64",
             "type": "integer"
           },
@@ -8559,9 +8511,7 @@
           },
           "name": {
             "description": "Contributor's name",
-            "examples": [
-              "Contributor Name"
-            ],
+            "example": "Contributor Name",
             "type": "string"
           }
         },
@@ -8767,17 +8717,13 @@
           },
           "last_modified": {
             "description": "Moment this project was last modified. Project contributions also count as a modification",
-            "examples": [
-              "2025-06-01T00:00:00Z"
-            ],
+            "example": "2025-06-01T00:00:00Z",
             "format": "date-time",
             "type": "string"
           },
           "name": {
             "description": "Project's name",
-            "examples": [
-              "Project Name"
-            ],
+            "example": "Project Name",
             "type": "string"
           },
           "progress": {
@@ -8798,9 +8744,7 @@
               "Expired",
               "Deleted"
             ],
-            "examples": [
-              "Active"
-            ],
+            "example": "Active",
             "type": "string",
             "x-enum-descriptions": [
               "An unspecified state",
@@ -10079,15 +10023,11 @@
         "properties": {
           "data": {
             "description": "JSON-encoded configuration",
-            "examples": [
-              {}
-            ]
+            "example": {}
           },
           "type": {
             "description": "Configuration type",
-            "examples": [
-              "projectType"
-            ],
+            "example": "projectType",
             "type": "string"
           }
         },
@@ -10101,33 +10041,25 @@
         "properties": {
           "participation_limit": {
             "description": "Limit on the contribution of the individual participant",
-            "examples": [
-              1000
-            ],
+            "example": 1000,
             "format": "int64",
             "type": "integer"
           },
           "reward_per_contribution": {
             "description": "ISK reward per contribution",
-            "examples": [
-              123.5
-            ],
+            "example": 123.5,
             "format": "double",
             "type": "number"
           },
           "submission_limit": {
             "description": "Limit on amount of contribution per submission",
-            "examples": [
-              100
-            ],
+            "example": 100,
             "format": "int64",
             "type": "integer"
           },
           "submission_multiplier": {
             "description": "Multiplier towards progress per contribution",
-            "examples": [
-              1.5
-            ],
+            "example": 1.5,
             "format": "double",
             "type": "number"
           }
@@ -10142,9 +10074,7 @@
           },
           "name": {
             "description": "Creator's name",
-            "examples": [
-              "Creator Name"
-            ],
+            "example": "Creator Name",
             "type": "string"
           }
         },
@@ -10165,9 +10095,7 @@
               "Enforcer",
               "Soldier of Fortune"
             ],
-            "examples": [
-              "Explorer"
-            ],
+            "example": "Explorer",
             "type": "string",
             "x-enum-descriptions": [
               "An unspecified career",
@@ -10179,32 +10107,24 @@
           },
           "created": {
             "description": "Moment this project was created",
-            "examples": [
-              "2025-06-01T00:00:00Z"
-            ],
+            "example": "2025-06-01T00:00:00Z",
             "format": "date-time",
             "type": "string"
           },
           "description": {
             "description": "Description",
-            "examples": [
-              "Project Description"
-            ],
+            "example": "Project Description",
             "type": "string"
           },
           "expires": {
             "description": "Moment this project expires",
-            "examples": [
-              "2025-06-01T00:01:00Z"
-            ],
+            "example": "2025-06-01T00:01:00Z",
             "format": "date-time",
             "type": "string"
           },
           "finished": {
             "description": "Moment this project transitioned to a non-active state.",
-            "examples": [
-              "2025-06-01T00:00:00Z"
-            ],
+            "example": "2025-06-01T00:00:00Z",
             "format": "date-time",
             "type": "string"
           }
@@ -10220,17 +10140,13 @@
         "properties": {
           "current": {
             "description": "Current progress",
-            "examples": [
-              50
-            ],
+            "example": 50,
             "format": "int64",
             "type": "integer"
           },
           "desired": {
             "description": "Desired progress",
-            "examples": [
-              100
-            ],
+            "example": 100,
             "format": "int64",
             "type": "integer"
           }
@@ -10249,17 +10165,13 @@
           },
           "last_modified": {
             "description": "Moment this project was last modified. Project contributions also count as a modification",
-            "examples": [
-              "2025-06-01T00:00:00Z"
-            ],
+            "example": "2025-06-01T00:00:00Z",
             "format": "date-time",
             "type": "string"
           },
           "name": {
             "description": "Project's name",
-            "examples": [
-              "Project Name"
-            ],
+            "example": "Project Name",
             "type": "string"
           },
           "progress": {
@@ -10280,9 +10192,7 @@
               "Expired",
               "Deleted"
             ],
-            "examples": [
-              "Active"
-            ],
+            "example": "Active",
             "type": "string",
             "x-enum-descriptions": [
               "An unspecified state",
@@ -10307,17 +10217,13 @@
         "properties": {
           "initial": {
             "description": "Original amount of ISK that was reserved for this project",
-            "examples": [
-              12345.5
-            ],
+            "example": 12345.5,
             "format": "double",
             "type": "number"
           },
           "remaining": {
             "description": "Remaining ISK to be awarded",
-            "examples": [
-              5432.1
-            ],
+            "example": 5432.1,
             "format": "double",
             "type": "number"
           }
@@ -10350,9 +10256,7 @@
         "properties": {
           "effective_workforce": {
             "description": "Skyhook's effective workforce; this can differ from the Skyhook's normal workforce due to the influence of an attached Mercenary Den",
-            "examples": [
-              1000
-            ],
+            "example": 1000,
             "format": "int64",
             "type": "integer"
           },
@@ -10416,17 +10320,13 @@
         "properties": {
           "last_cycle": {
             "description": "Moment the 'SecureStock'/'UnsecuredStock' value had its last cycle; use SDE to calculate the current values",
-            "examples": [
-              "2026-02-23T12:00:00Z"
-            ],
+            "example": "2026-02-23T12:00:00Z",
             "format": "date-time",
             "type": "string"
           },
           "secured_stock": {
             "description": "Secured stock of the reagent at the time of 'last_cycle'",
-            "examples": [
-              1000
-            ],
+            "example": 1000,
             "format": "int64",
             "type": "integer"
           },
@@ -10436,9 +10336,7 @@
           },
           "unsecured_stock": {
             "description": "Unsecured stock of the reagent at the time of 'last_cycle'",
-            "examples": [
-              300
-            ],
+            "example": 300,
             "format": "int64",
             "type": "integer"
           }
@@ -10455,9 +10353,7 @@
         "properties": {
           "end": {
             "description": "The time when the reinforcement timer will end",
-            "examples": [
-              "2026-02-23T16:00:00Z"
-            ],
+            "example": "2026-02-23T16:00:00Z",
             "format": "date-time",
             "type": "string"
           }
@@ -10471,17 +10367,13 @@
         "properties": {
           "end": {
             "description": "End time of the theft vulnerability window",
-            "examples": [
-              "2026-02-23T16:00:00Z"
-            ],
+            "example": "2026-02-23T16:00:00Z",
             "format": "date-time",
             "type": "string"
           },
           "start": {
             "description": "Start time of the theft vulnerability window",
-            "examples": [
-              "2026-02-23T12:00:00Z"
-            ],
+            "example": "2026-02-23T12:00:00Z",
             "format": "date-time",
             "type": "string"
           }
@@ -10576,17 +10468,13 @@
         "properties": {
           "amount": {
             "description": "Amount of reagent in the bay at the time of 'last_updated'",
-            "examples": [
-              1000
-            ],
+            "example": 1000,
             "format": "int64",
             "type": "integer"
           },
           "burning_per_hour": {
             "description": "Amount of reagent burning per hour",
-            "examples": [
-              10
-            ],
+            "example": 10,
             "format": "int64",
             "type": "integer"
           },
@@ -10606,9 +10494,7 @@
         "properties": {
           "last_updated": {
             "description": "Moment the 'amount' value was last updated; use 'burning_per_hour' to calculate the current value",
-            "examples": [
-              "2026-02-23T12:00:00Z"
-            ],
+            "example": "2026-02-23T12:00:00Z",
             "format": "date-time",
             "type": "string"
           },
@@ -10630,17 +10516,13 @@
         "properties": {
           "allocated": {
             "description": "Allocated power",
-            "examples": [
-              100
-            ],
+            "example": 100,
             "format": "int64",
             "type": "integer"
           },
           "available": {
             "description": "Available power",
-            "examples": [
-              1000
-            ],
+            "example": 1000,
             "format": "int64",
             "type": "integer"
           }
@@ -10672,17 +10554,13 @@
         "properties": {
           "allocated": {
             "description": "Allocated workforce",
-            "examples": [
-              100
-            ],
+            "example": 100,
             "format": "int64",
             "type": "integer"
           },
           "available": {
             "description": "Available workforce",
-            "examples": [
-              1000
-            ],
+            "example": 1000,
             "format": "int64",
             "type": "integer"
           }
@@ -10722,10 +10600,8 @@
                 "properties": {
                   "transit": {
                     "description": "Workforce is requested to be brought to transit",
-                    "type": [
-                      "boolean",
-                      "null"
-                    ]
+                    "nullable": true,
+                    "type": "boolean"
                   }
                 },
                 "title": "transit",
@@ -10760,10 +10636,8 @@
                 "properties": {
                   "transit": {
                     "description": "Workforce is being brought to transit",
-                    "type": [
-                      "boolean",
-                      "null"
-                    ]
+                    "nullable": true,
+                    "type": "boolean"
                   }
                 },
                 "title": "transit",
@@ -10782,9 +10656,7 @@
         "properties": {
           "amount": {
             "description": "Amount to be exported",
-            "examples": [
-              1000
-            ],
+            "example": 1000,
             "format": "int64",
             "type": "integer"
           },
@@ -10829,9 +10701,7 @@
         "properties": {
           "amount": {
             "description": "Amount exported",
-            "examples": [
-              1000
-            ],
+            "example": 1000,
             "format": "int64",
             "type": "integer"
           },
@@ -10861,9 +10731,7 @@
         "properties": {
           "amount": {
             "description": "Amount imported",
-            "examples": [
-              1000
-            ],
+            "example": 1000,
             "format": "int64",
             "type": "integer"
           },
@@ -10913,17 +10781,13 @@
         "properties": {
           "end": {
             "description": "End time of the vulnerability window; if in the past, the Sovereignty Hub is in overtime",
-            "examples": [
-              "2026-02-23T16:00:00Z"
-            ],
+            "example": "2026-02-23T16:00:00Z",
             "format": "date-time",
             "type": "string"
           },
           "start": {
             "description": "Start time of the vulnerability window; if in the past, the Sovereignty Hub is vulnerable right now",
-            "examples": [
-              "2026-02-23T12:00:00Z"
-            ],
+            "example": "2026-02-23T12:00:00Z",
             "format": "date-time",
             "type": "string"
           }
@@ -11216,9 +11080,7 @@
         "type": "array"
       },
       "DungeonID": {
-        "examples": [
-          12367
-        ],
+        "example": 12367,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
@@ -11259,9 +11121,7 @@
         "type": "object"
       },
       "FactionID": {
-        "examples": [
-          500002
-        ],
+        "example": 500002,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
@@ -11454,17 +11314,13 @@
           },
           "last_modified": {
             "description": "Job's last modified",
-            "examples": [
-              "2025-11-01T00:00:00Z"
-            ],
+            "example": "2025-11-01T00:00:00Z",
             "format": "date-time",
             "type": "string"
           },
           "name": {
             "description": "Job's name",
-            "examples": [
-              "Freelance Job Name"
-            ],
+            "example": "Freelance Job Name",
             "type": "string"
           },
           "progress": {
@@ -11485,9 +11341,7 @@
               "Expired",
               "Deleted"
             ],
-            "examples": [
-              "Active"
-            ],
+            "example": "Active",
             "type": "string",
             "x-enum-descriptions": [
               "An unspecified state",
@@ -11515,9 +11369,7 @@
         "properties": {
           "acl_protected": {
             "description": "Whether the job is protected by an ACL",
-            "examples": [
-              false
-            ],
+            "example": false,
             "type": "boolean"
           },
           "broadcast_locations": {
@@ -11545,9 +11397,7 @@
           },
           "name": {
             "description": "Solar system name",
-            "examples": [
-              "Jita"
-            ],
+            "example": "Jita",
             "type": "string"
           }
         },
@@ -11561,9 +11411,7 @@
         "properties": {
           "method": {
             "description": "Contribution method (see SDE for valid values)",
-            "examples": [
-              "BoostShield"
-            ],
+            "example": "BoostShield",
             "type": "string"
           },
           "parameters": {
@@ -11616,9 +11464,7 @@
           },
           "version": {
             "description": "Version of parameter definition used",
-            "examples": [
-              1
-            ],
+            "example": 1,
             "format": "int64",
             "type": "integer"
           }
@@ -11634,41 +11480,31 @@
         "properties": {
           "contribution_per_participant_limit": {
             "description": "Limit on the contribution of the individual participant",
-            "examples": [
-              1000
-            ],
+            "example": 1000,
             "format": "int64",
             "type": "integer"
           },
           "max_committed_participants": {
             "description": "Maximum number of participants that can commit to this job",
-            "examples": [
-              10000
-            ],
+            "example": 10000,
             "format": "int64",
             "type": "integer"
           },
           "reward_per_contribution": {
             "description": "ISK reward per contribution",
-            "examples": [
-              123.5
-            ],
+            "example": 123.5,
             "format": "double",
             "type": "number"
           },
           "submission_limit": {
             "description": "Limit on amount of contribution per submission",
-            "examples": [
-              100
-            ],
+            "example": 100,
             "format": "int64",
             "type": "integer"
           },
           "submission_multiplier": {
             "description": "Multiplier towards progress per contribution",
-            "examples": [
-              1.5
-            ],
+            "example": 1.5,
             "format": "double",
             "type": "number"
           }
@@ -11703,9 +11539,7 @@
           },
           "name": {
             "description": "Character name",
-            "examples": [
-              "Creator Name"
-            ],
+            "example": "Creator Name",
             "type": "string"
           }
         },
@@ -11723,9 +11557,7 @@
           },
           "name": {
             "description": "Corporation name",
-            "examples": [
-              "Creator Corporation"
-            ],
+            "example": "Creator Corporation",
             "type": "string"
           }
         },
@@ -11746,9 +11578,7 @@
               "Enforcer",
               "Soldier of Fortune"
             ],
-            "examples": [
-              "Explorer"
-            ],
+            "example": "Explorer",
             "type": "string",
             "x-enum-descriptions": [
               "An unspecified career",
@@ -11760,9 +11590,7 @@
           },
           "created": {
             "description": "Moment this freelance job was created",
-            "examples": [
-              "2025-11-01T00:00:00Z"
-            ],
+            "example": "2025-11-01T00:00:00Z",
             "format": "date-time",
             "type": "string"
           },
@@ -11772,24 +11600,18 @@
           },
           "description": {
             "description": "Description",
-            "examples": [
-              "Freelance Job Description"
-            ],
+            "example": "Freelance Job Description",
             "type": "string"
           },
           "expires": {
             "description": "Moment this freelance job expires",
-            "examples": [
-              "2025-11-01T00:01:00Z"
-            ],
+            "example": "2025-11-01T00:01:00Z",
             "format": "date-time",
             "type": "string"
           },
           "finished": {
             "description": "Moment this freelance job transitioned to a non-active state",
-            "examples": [
-              "2025-11-01T00:00:00Z"
-            ],
+            "example": "2025-11-01T00:00:00Z",
             "format": "date-time",
             "type": "string"
           }
@@ -11810,17 +11632,13 @@
           },
           "last_modified": {
             "description": "Job's last modified",
-            "examples": [
-              "2025-11-01T00:00:00Z"
-            ],
+            "example": "2025-11-01T00:00:00Z",
             "format": "date-time",
             "type": "string"
           },
           "name": {
             "description": "Job's name",
-            "examples": [
-              "Freelance Job Name"
-            ],
+            "example": "Freelance Job Name",
             "type": "string"
           },
           "progress": {
@@ -11841,9 +11659,7 @@
               "Expired",
               "Deleted"
             ],
-            "examples": [
-              "Active"
-            ],
+            "example": "Active",
             "type": "string",
             "x-enum-descriptions": [
               "An unspecified state",
@@ -11868,9 +11684,7 @@
         "properties": {
           "value": {
             "description": "Boolean value",
-            "examples": [
-              true
-            ],
+            "example": true,
             "type": "boolean"
           }
         },
@@ -11915,17 +11729,13 @@
         "properties": {
           "value_type": {
             "description": "Type of the value(s)",
-            "examples": [
-              "solarsystem"
-            ],
+            "example": "solarsystem",
             "type": "string"
           },
           "values": {
             "description": "Value(s) of this type",
-            "examples": [
-              [
-                "30001401"
-              ]
+            "example": [
+              "30001401"
             ],
             "items": {
               "type": "string"
@@ -11943,11 +11753,9 @@
         "properties": {
           "selected": {
             "description": "Selected value(s)",
-            "examples": [
-              [
-                "self",
-                "corporation"
-              ]
+            "example": [
+              "self",
+              "corporation"
             ],
             "items": {
               "type": "string"
@@ -11964,17 +11772,13 @@
         "properties": {
           "current": {
             "description": "Current progress",
-            "examples": [
-              50
-            ],
+            "example": 50,
             "format": "int64",
             "type": "integer"
           },
           "desired": {
             "description": "Desired progress",
-            "examples": [
-              100
-            ],
+            "example": 100,
             "format": "int64",
             "type": "integer"
           }
@@ -11989,17 +11793,13 @@
         "properties": {
           "maximum_age": {
             "description": "Maximum age of the participant, in days",
-            "examples": [
-              100
-            ],
+            "example": 100,
             "format": "int64",
             "type": "integer"
           },
           "minimum_age": {
             "description": "Minimum age of the participant, in days",
-            "examples": [
-              10
-            ],
+            "example": 10,
             "format": "int64",
             "type": "integer"
           }
@@ -12010,17 +11810,13 @@
         "properties": {
           "initial": {
             "description": "Original amount of ISK that was reserved for this freelance job",
-            "examples": [
-              12345.5
-            ],
+            "example": 12345.5,
             "format": "double",
             "type": "number"
           },
           "remaining": {
             "description": "Remaining ISK to be awarded",
-            "examples": [
-              5432.1
-            ],
+            "example": 5432.1,
             "format": "double",
             "type": "number"
           }
@@ -12633,9 +12429,7 @@
         "type": "array"
       },
       "GroupID": {
-        "examples": [
-          1559
-        ],
+        "example": 1559,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
@@ -12841,9 +12635,7 @@
         "type": "array"
       },
       "ItemID": {
-        "examples": [
-          1000000000001
-        ],
+        "example": 1000000000001,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
@@ -13428,9 +13220,7 @@
           },
           "description": {
             "description": "Description",
-            "examples": [
-              "Updated response schema."
-            ],
+            "example": "Updated response schema.",
             "type": "string"
           },
           "method": {
@@ -13441,9 +13231,7 @@
               "PUT",
               "DELETE"
             ],
-            "examples": [
-              "GET"
-            ],
+            "example": "GET",
             "type": "string",
             "x-enum-descriptions": [
               "",
@@ -13454,9 +13242,7 @@
           },
           "path": {
             "description": "Path of the route",
-            "examples": [
-              "/meta/changelog"
-            ],
+            "example": "/meta/changelog",
             "type": "string"
           },
           "type": {
@@ -13467,9 +13253,7 @@
               "new",
               "removed"
             ],
-            "examples": [
-              "breaking"
-            ],
+            "example": "breaking",
             "type": "string",
             "x-enum-descriptions": [
               "Breaking change",
@@ -13567,25 +13351,19 @@
         "type": "object"
       },
       "PlanetID": {
-        "examples": [
-          40000002
-        ],
+        "example": 40000002,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
       },
       "RaceID": {
-        "examples": [
-          1
-        ],
+        "example": 1,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
       },
       "RegionID": {
-        "examples": [
-          10000001
-        ],
+        "example": 10000001,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
@@ -13669,9 +13447,7 @@
       },
       "ShipTreeGroupID": {
         "description": "Ship tree group identifier.",
-        "examples": [
-          1559
-        ],
+        "example": 1559,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
@@ -13695,17 +13471,13 @@
         "properties": {
           "end": {
             "description": "End time of the theft vulnerability window",
-            "examples": [
-              "2026-02-23T16:00:00Z"
-            ],
+            "example": "2026-02-23T16:00:00Z",
             "format": "date-time",
             "type": "string"
           },
           "start": {
             "description": "Start time of the theft vulnerability window",
-            "examples": [
-              "2026-02-23T12:00:00Z"
-            ],
+            "example": "2026-02-23T12:00:00Z",
             "format": "date-time",
             "type": "string"
           }
@@ -13739,9 +13511,7 @@
         "type": "object"
       },
       "SolarSystemID": {
-        "examples": [
-          30000001
-        ],
+        "example": 30000001,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
@@ -13857,9 +13627,7 @@
           },
           "claimed_since": {
             "description": "Time the claim was made",
-            "examples": [
-              "2026-02-23T12:00:00Z"
-            ],
+            "example": "2026-02-23T12:00:00Z",
             "format": "date-time",
             "type": "string"
           },
@@ -13873,9 +13641,7 @@
           },
           "is_capital_system": {
             "description": "Whether the system is the capital system of the alliance",
-            "examples": [
-              false
-            ],
+            "example": false,
             "type": "boolean"
           },
           "sovereignty_hub": {
@@ -13897,33 +13663,25 @@
         "properties": {
           "activity_defense_multiplier": {
             "description": "Current Activity Defense Multiplier",
-            "examples": [
-              1.2
-            ],
+            "example": 1.2,
             "format": "double",
             "type": "number"
           },
           "industrial_level": {
             "description": "Industrial level (0-5) of this solar system",
-            "examples": [
-              0
-            ],
+            "example": 0,
             "format": "int64",
             "type": "integer"
           },
           "military_level": {
             "description": "Military level (0-5) of this solar system",
-            "examples": [
-              3
-            ],
+            "example": 3,
             "format": "int64",
             "type": "integer"
           },
           "strategic_level": {
             "description": "Strategic level (0-5) of this solar system",
-            "examples": [
-              5
-            ],
+            "example": 5,
             "format": "int64",
             "type": "integer"
           }
@@ -14016,17 +13774,13 @@
         "properties": {
           "end": {
             "description": "End time of the vulnerability window; if in the past, the Sovereignty Hub is in overtime",
-            "examples": [
-              "2026-02-23T16:00:00Z"
-            ],
+            "example": "2026-02-23T16:00:00Z",
             "format": "date-time",
             "type": "string"
           },
           "start": {
             "description": "Start time of the vulnerability window; if in the past, the Sovereignty Hub is vulnerable right now",
-            "examples": [
-              "2026-02-23T12:00:00Z"
-            ],
+            "example": "2026-02-23T12:00:00Z",
             "format": "date-time",
             "type": "string"
           }
@@ -14038,9 +13792,7 @@
         "type": "object"
       },
       "StationID": {
-        "examples": [
-          60000001
-        ],
+        "example": 60000001,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
@@ -14073,17 +13825,13 @@
         "type": "object"
       },
       "TypeID": {
-        "examples": [
-          587
-        ],
+        "example": 587,
         "format": "int64",
         "type": "integer",
         "x-common-model": "true"
       },
       "UUID": {
-        "examples": [
-          "3868eaed-8278-4cb7-9709-7d7de9c20dc7"
-        ],
+        "example": "3868eaed-8278-4cb7-9709-7d7de9c20dc7",
         "format": "uuid",
         "type": "string",
         "x-common-model": "true"
@@ -15746,7 +15494,7 @@
     "title": "EVE Spring Inebriation (ESI) - tranquility",
     "version": "2026-06-09"
   },
-  "openapi": "3.1.0",
+  "openapi": "3.0.3",
   "paths": {
     "/alliances": {
       "get": {
