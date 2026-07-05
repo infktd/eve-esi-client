@@ -1,0 +1,3 @@
+# The spec-check workflow diffs a freshly fetched spec against the committed
+# copy; line-ending normalization churn would show up as phantom changes.
+* text=auto eol=lf
