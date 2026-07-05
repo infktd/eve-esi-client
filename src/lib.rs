@@ -26,7 +26,7 @@
 //!
 //! ```no_run
 //! # async fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-//! let client = eve_esi::Client::builder()
+//! let client = eve_esi_client::Client::builder()
 //!     .user_agent("my-app/1.0 (contact@example.com)")
 //!     .build()?;
 //! let status = client.get_status().send().await?;

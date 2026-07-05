@@ -12,8 +12,8 @@ use httpmock::prelude::*;
 const STATUS_BODY: &str =
     r#"{"players": 12345, "server_version": "1", "start_time": "2026-07-05T11:00:00Z"}"#;
 
-fn client_for(server: &MockServer) -> eve_esi::Client {
-    eve_esi::Client::builder()
+fn client_for(server: &MockServer) -> eve_esi_client::Client {
+    eve_esi_client::Client::builder()
         .user_agent("eve-esi tests")
         .base_url(server.base_url())
         .build()

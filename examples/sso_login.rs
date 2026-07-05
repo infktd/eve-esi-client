@@ -12,7 +12,7 @@
 use std::io::{BufRead as _, BufReader, Write as _};
 use std::net::TcpListener;
 
-use eve_esi::auth::{Authenticator, SsoClient};
+use eve_esi_client::auth::{Authenticator, SsoClient};
 
 const REDIRECT_URI: &str = "http://localhost:8787/callback";
 const SCOPE: &str = "esi-location.read_location.v1";
@@ -74,13 +74,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if tokens.refresh_token.is_some() { "yes" } else { "no" },
     );
 
-    let client = eve_esi::Client::builder()
+    let client = eve_esi_client::Client::builder()
         .user_agent("eve-esi sso example (jay.nejati@outlook.com)")
         .authenticator(Authenticator::new(sso, tokens))
         .build()?;
     let location = client
         .get_characters_character_id_location()
-        .character_id(eve_esi::types::CharacterId(character_id as i64))
+        .character_id(eve_esi_client::types::CharacterId(character_id as i64))
         .send()
         .await?;
     println!("Current solar system: {}", location.solar_system_id);

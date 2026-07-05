@@ -3,7 +3,7 @@
 //!
 //! Run with: `cargo run --example spot_check`
 
-use eve_esi::Client;
+use eve_esi_client::Client;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
