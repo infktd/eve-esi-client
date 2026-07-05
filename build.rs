@@ -105,11 +105,23 @@ fn main() {
         .expect("spec declares no server URL")
         .to_string();
 
+    let sso_authorize_url = raw
+        .pointer("/components/securitySchemes/OAuth2/flows/authorizationCode/authorizationUrl")
+        .and_then(Value::as_str)
+        .expect("spec declares no OAuth2 authorization URL")
+        .to_string();
+    let sso_token_url = raw
+        .pointer("/components/securitySchemes/OAuth2/flows/authorizationCode/tokenUrl")
+        .and_then(Value::as_str)
+        .expect("spec declares no OAuth2 token URL")
+        .to_string();
+
     let spec: openapiv3::OpenAPI =
         serde_json::from_value(raw).expect("spec failed to parse as OpenAPI 3.0");
 
     let mut settings = progenitor::GenerationSettings::default();
     settings.with_interface(progenitor::InterfaceStyle::Builder);
+    settings.with_inner_type("crate::EsiInner".parse().unwrap());
     let mut generator = progenitor::Generator::new(&settings);
     let tokens = generator
         .generate_tokens(&spec)
@@ -125,7 +137,13 @@ fn main() {
          pub const COMPATIBILITY_DATE: &str = \"{compatibility_date}\";\n\
          \n\
          /// ESI's base URL, from the spec's `servers` entry.\n\
-         pub const BASE_URL: &str = \"{base_url}\";\n"
+         pub const BASE_URL: &str = \"{base_url}\";\n\
+         \n\
+         /// EVE SSO authorization endpoint, from the spec's OAuth2 security scheme.\n\
+         pub const SSO_AUTHORIZE_URL: &str = \"{sso_authorize_url}\";\n\
+         \n\
+         /// EVE SSO token endpoint, from the spec's OAuth2 security scheme.\n\
+         pub const SSO_TOKEN_URL: &str = \"{sso_token_url}\";\n"
     ));
 
     let mut out_file = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
