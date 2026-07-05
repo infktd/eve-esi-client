@@ -2,7 +2,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/eve-esi-client.svg)](https://crates.io/crates/eve-esi-client)
 [![docs.rs](https://img.shields.io/docsrs/eve-esi-client)](https://docs.rs/eve-esi-client)
-[![CI](https://github.com/infktd/eve-esi/actions/workflows/ci.yml/badge.svg)](https://github.com/infktd/eve-esi/actions/workflows/ci.yml)
+[![CI](https://github.com/infktd/eve-esi-client/actions/workflows/ci.yml/badge.svg)](https://github.com/infktd/eve-esi-client/actions/workflows/ci.yml)
 [![license](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 A **complete, always-in-sync** Rust client for [EVE Online](https://www.eveonline.com/)'s
