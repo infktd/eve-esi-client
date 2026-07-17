@@ -1,0 +1,157 @@
+name: publish-on-merge
+
+# Keeps crates.io in lockstep with main. Every merge that touches the
+# library (not docs/CI) publishes a new version automatically:
+#
+#   * default              -> patch bump (0.1.4 -> 0.1.5), a compatible
+#                             release that downstream `cargo update` picks up.
+#   * breaking change      -> minor bump (0.1.4 -> 0.2.0). Pre-1.0, the minor
+#                             slot is Cargo's "breaking" slot, so downstream
+#                             stays put until it opts in. Triggered by
+#                             `[bump:minor]` (or "BREAKING CHANGE") in the
+#                             merge commit message — which spec-check.yml
+#                             stamps onto PRs it classifies as breaking.
+#   * `[bump:skip]`        -> no release (use for the rare code change you
+#                             don't want shipped on its own).
+#
+# The version is derived from what's actually live on crates.io and bumped,
+# so the repo can never drift out of sync with the registry. A failed
+# publish leaves main untouched; the next merge retries cleanly.
+#
+# Manual dispatch offers the same thing with an explicit level (incl. major),
+# replacing the old tag-triggered release workflow.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "build.rs"
+      - "build_support/**"
+      - "spec/esi-latest.json"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+    inputs:
+      level:
+        description: "Version bump level"
+        type: choice
+        default: patch
+        options: [patch, minor, major, skip]
+
+permissions:
+  contents: write
+
+# Serialize releases so two quick merges can't grab the same version number.
+concurrency:
+  group: publish-crates-io
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Determine bump level
+        id: level
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            level="${{ inputs.level }}"
+          else
+            msg=$(git log -1 --format=%B)
+            if printf '%s' "$msg" | grep -qiE '\[bump:skip\]'; then
+              level=skip
+            elif printf '%s' "$msg" | grep -qiE '\[bump:major\]'; then
+              level=major
+            elif printf '%s' "$msg" | grep -qiE '\[bump:minor\]|BREAKING CHANGE'; then
+              # A breaking change is the minor slot pre-1.0. spec-check stamps
+              # [bump:minor] onto breaking spec PRs; hand-written commits can
+              # use [bump:minor] or a "BREAKING CHANGE" footer.
+              level=minor
+            else
+              level=patch
+            fi
+          fi
+          echo "level=$level" >> "$GITHUB_OUTPUT"
+          echo "bump level: $level"
+
+      - name: Compute next version from crates.io
+        id: version
+        if: steps.level.outputs.level != 'skip'
+        run: |
+          set -euo pipefail
+          crate=eve-esi-client
+          resp=$(curl -sL "https://crates.io/api/v1/crates/$crate" -A "eve-esi-client release automation")
+          current=$(printf '%s' "$resp" \
+            | grep -o '"max_stable_version":[[:space:]]*"[^"]*"' \
+            | head -1 | sed 's/.*"\([0-9][^"]*\)"$/\1/')
+          if [ -z "$current" ]; then
+            echo "could not read current version from crates.io response:" >&2
+            printf '%s\n' "$resp" | head -c 500 >&2
+            exit 1
+          fi
+          IFS='.' read -r major minor patch <<< "$current"
+          case "${{ steps.level.outputs.level }}" in
+            major) major=$((major+1)); minor=0; patch=0 ;;
+            minor) minor=$((minor+1)); patch=0 ;;
+            patch) patch=$((patch+1)) ;;
+            *) echo "unknown level"; exit 1 ;;
+          esac
+          next="${major}.${minor}.${patch}"
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+          echo "releasing $current -> $next"
+
+      - name: Set crate version
+        if: steps.level.outputs.level != 'skip'
+        run: |
+          next="${{ steps.version.outputs.next }}"
+          # Only the [package] version sits at the start of a line; dependency
+          # versions are inline (`name = { version = ... }`), so this anchored
+          # replace of the first match targets exactly the package version.
+          sed -i "0,/^version = /s/^version = \".*\"/version = \"$next\"/" Cargo.toml
+          grep -m1 '^version = ' Cargo.toml
+
+      - name: Build and test
+        if: steps.level.outputs.level != 'skip'
+        run: |
+          # cargo build also rewrites the local package's version in Cargo.lock.
+          cargo build --release
+          cargo test
+
+      - name: Publish to crates.io
+        if: steps.level.outputs.level != 'skip'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p eve-esi-client --allow-dirty
+
+      - name: Commit version bump, tag, and release
+        if: steps.level.outputs.level != 'skip'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          next="${{ steps.version.outputs.next }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          git commit -m "Release v$next [skip ci]"
+          git tag -a "v$next" -m "v$next"
+          # GITHUB_TOKEN pushes don't retrigger workflows; [skip ci] is belt
+          # and suspenders against the loop.
+          git push origin "HEAD:${{ github.ref_name }}"
+          git push origin "v$next"
+          gh release create "v$next" \
+            --title "v$next" \
+            --notes "Automated release (${{ steps.level.outputs.level }} bump), published to crates.io."
+
+      - name: Report skip
+        if: steps.level.outputs.level == 'skip'
+        run: echo "commit marked [bump:skip]; nothing published."

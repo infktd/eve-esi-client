@@ -5,7 +5,9 @@ name: spec-check
 # additive/breaking annotation. If the new spec breaks the build, opens an
 # issue instead — a breaking spec change needs a human's design decision.
 #
-# This job never publishes anything; releases are release.yml, manual only.
+# This job never publishes anything itself. It stamps the PR with a bump
+# marker; publishing happens when a human merges the PR, via
+# publish-on-merge.yml.
 
 on:
   schedule:
@@ -55,19 +57,34 @@ jobs:
         id: annotate
         if: steps.detect.outputs.changed == 'true' && steps.build.outcome == 'success'
         run: |
+          cargo run -p xtask -- spec-diff /tmp/esi-old.json spec/esi-latest.json | tee /tmp/report.md
           {
             echo 'report<<SPEC_DIFF_EOF'
-            cargo run -p xtask -- spec-diff /tmp/esi-old.json spec/esi-latest.json
+            cat /tmp/report.md
             echo 'SPEC_DIFF_EOF'
           } >> "$GITHUB_OUTPUT"
+
+      - name: Classify bump level
+        id: bump
+        if: steps.detect.outputs.changed == 'true' && steps.build.outcome == 'success'
+        run: |
+          # Stamp the merge with the bump marker publish-on-merge.yml reads.
+          # A breaking spec change -> minor bump (the breaking slot pre-1.0).
+          if grep -qi 'potentially BREAKING' /tmp/report.md; then
+            echo "marker=[bump:minor]" >> "$GITHUB_OUTPUT"
+          else
+            echo "marker=[bump:patch]" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Open a PR with the spec update
         if: steps.detect.outputs.changed == 'true' && steps.build.outcome == 'success'
         uses: peter-evans/create-pull-request@v7
         with:
           branch: spec-update
-          title: "Spec update: ESI published a new spec"
-          commit-message: "Update ESI spec to latest published version"
+          # The marker rides in both title and commit message so it survives
+          # squash, merge-commit, and rebase merge strategies alike.
+          title: "Spec update ${{ steps.bump.outputs.marker }}: ESI published a new spec"
+          commit-message: "Update ESI spec to latest published version ${{ steps.bump.outputs.marker }}"
           add-paths: spec/esi-latest.json
           body: |
             Automated spec refresh. `cargo build` and `cargo test` pass
@@ -77,7 +94,8 @@ jobs:
 
             Review the classification above before merging; it is a
             heuristic to guide the semver decision, not a substitute for
-            reading the diff.
+            reading the diff. Merging this publishes to crates.io
+            automatically (`${{ steps.bump.outputs.marker }}`).
 
       - name: Open an issue for a breaking spec change
         if: steps.detect.outputs.changed == 'true' && steps.build.outcome == 'failure'
