@@ -7,6 +7,12 @@
 //! client sits a thin layer that implements ESI's operating rules
 //! automatically:
 //!
+//! - **Rate-limit groups** — each route's token budget is known from the
+//!   spec and tracked from `X-Ratelimit-*` headers. A request that could
+//!   overdraw its group waits until enough spent tokens are released, so the
+//!   client's own traffic never earns a 429; a 429 anyway holds the group
+//!   until `Retry-After`. A drained bucket can mean waiting up to the group's
+//!   full window (typically 15 minutes).
 //! - **Error-limit backoff** — `X-ESI-Error-Limit-Remain`/`-Reset` are
 //!   tracked from every response, and requests are held once the remaining
 //!   error budget drops to a threshold, until the window resets.
@@ -42,6 +48,7 @@ pub mod auth;
 mod cache;
 mod hooks;
 mod limiter;
+mod rate_limit;
 
 mod generated {
     #![allow(clippy::all)]
@@ -62,6 +69,7 @@ pub use generated::*;
 #[derive(Debug, Clone, Default)]
 pub struct EsiInner {
     pub(crate) limiter: Arc<limiter::ErrorLimiter>,
+    pub(crate) rate_limiter: Arc<rate_limit::RateLimiter>,
     pub(crate) cache: Option<Arc<cache::HttpCache>>,
     pub(crate) auth: Option<Arc<auth::Authenticator>>,
 }
@@ -141,6 +149,7 @@ impl ClientBuilder {
             limiter: Arc::new(limiter::ErrorLimiter::new(
                 self.error_limit_threshold.unwrap_or(10),
             )),
+            rate_limiter: Arc::default(),
             cache: self
                 .http_cache
                 .unwrap_or(true)

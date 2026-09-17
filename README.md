@@ -34,6 +34,12 @@ hand-written.
 ESI error-limits (and ultimately bans) clients that ignore its headers.
 Every request through this client gets, with no configuration:
 
+- **Rate-limit groups** — every route's token budget is read from CCP's
+  spec at build time and tracked live from `X-Ratelimit-*` headers. A request
+  that could overdraw its group waits until enough spent tokens are released,
+  so your own traffic never earns a 429, even under concurrency. A 429 anyway
+  (say, a bucket shared with another process) holds the group until
+  `Retry-After`.
 - **Error-limit backoff** — `X-ESI-Error-Limit-Remain`/`-Reset` tracked on
   every response; requests are held until the window resets once the
   remaining budget runs low, before you're anywhere near a 420.
@@ -108,6 +114,7 @@ round-trip including the localhost callback listener.
 | Endpoint coverage | All 203 routes, generated from CCP's spec | Partial, added endpoint-by-endpoint |
 | Tracks ESI changes | Scheduled spec watch → annotated PR | Manual maintenance |
 | Compatibility-date API | Yes, pinned + sent automatically | Mostly legacy versioned routes |
+| Rate-limit groups (429 avoidance) | Automatic, budgets from CCP's spec | Usually caller's responsibility |
 | Error-limit backoff | Automatic | Usually caller's responsibility |
 | `Expires`/`ETag`/304 handling | Automatic, in-memory | Usually caller's responsibility |
 | SSO (PKCE) + auto-refresh | Built in | Varies |

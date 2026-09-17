@@ -47,6 +47,7 @@ progenitor = "0.14"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [build-dependencies]
+heck = "0.5"
 openapiv3 = "2.2"
 prettyplease = "0.2"
 progenitor = "0.14"
