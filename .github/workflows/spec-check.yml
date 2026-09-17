@@ -48,9 +48,15 @@ jobs:
         id: build
         if: steps.detect.outputs.changed == 'true'
         continue-on-error: true
+        env:
+          CARGO_TERM_COLOR: never
         run: |
           set -o pipefail
+          # Record which stage is running so a failure issue can say whether
+          # codegen/compilation broke or only tests did.
+          echo build > /tmp/stage
           cargo build 2>&1 | tee /tmp/build.log
+          echo test > /tmp/stage
           cargo test 2>&1 | tee -a /tmp/build.log
 
       - name: Annotate the change
@@ -107,20 +113,43 @@ jobs:
             exit 0
           fi
           gh label create spec-break --description "CCP spec change broke the build" --color B60205 || true
-          tail -c 60000 /tmp/build.log > /tmp/build-tail.log
+          stage=$(cat /tmp/stage)
+          if [ "$stage" = build ]; then
+            summary="the crate no longer compiles against it (codegen or hand-written layer). This needs a design decision: a normalization rule in build_support/normalize.rs, a code change, or an upstream bug report."
+          else
+            summary="the crate still compiles, but tests fail. Usually a test fixture has gone stale against the new schema rather than a real client bug — check the failures below against live ESI before changing the library."
+          fi
+          # Lead with the lines that matter; the full log is mostly
+          # "Compiling ..." noise.
+          {
+            # Compiler errors with their location/context lines.
+            grep -E -A6 '^error(\[E[0-9]+\])?:' /tmp/build.log || true
+            # Each failing test's stdout block: panic location + message.
+            grep -E -A4 '^---- .* stdout ----' /tmp/build.log || true
+            grep -E '^test result: FAILED' /tmp/build.log || true
+          } | head -c 20000 > /tmp/failures.log
+          tail -c 30000 /tmp/build.log > /tmp/build-tail.log
           gh issue create \
-            --title "CCP spec change breaks the build" \
+            --title "CCP spec change breaks the $stage" \
             --label spec-break \
             --body-file - <<EOF
-          The scheduled spec check fetched a new spec from CCP and the crate
-          no longer builds or passes tests against it. This needs a human
-          design decision (generator normalization rule, code change, or
-          upstream bug report) — see spec/README.md for the existing
-          normalization rules.
+          The scheduled spec check fetched a new spec from CCP, and $summary
+          Existing normalization rules are documented in spec/README.md.
 
-          Build/test output (tail):
+          Close this issue once fixed; while it is open, spec-check won't
+          file another.
+
+          Failures:
+
+          \`\`\`
+          $(cat /tmp/failures.log)
+          \`\`\`
+
+          <details><summary>Full output (tail)</summary>
 
           \`\`\`
           $(cat /tmp/build-tail.log)
           \`\`\`
+
+          </details>
           EOF

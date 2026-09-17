@@ -1,12 +1,16 @@
 //! The wrapper must honor ESI's caching rules: never re-request a route
 //! before its `Expires` elapses, and revalidate stale routes with
 //! `If-None-Match`, resurrecting the cached body on 304.
+//!
+//! The mock serves `GET /alliances`, whose response is a bare array of IDs,
+//! so the fixture can't be invalidated by CCP renaming or requiring fields
+//! on some object schema — these tests are about caching, not payloads.
 
 use chrono::{Duration as ChronoDuration, Utc};
 use httpmock::prelude::*;
 
-const STATUS_BODY: &str =
-    r#"{"players": 777, "server_version": "42", "start_time": "2026-07-05T11:00:00Z"}"#;
+const ALLIANCES_BODY: &str = "[99000001, 99000002, 99000003]";
+const ALLIANCE_COUNT: usize = 3;
 
 fn client_for(server: &MockServer) -> eve_esi_client::Client {
     eve_esi_client::Client::builder()
@@ -27,26 +31,26 @@ async fn fresh_response_is_not_rerequested_before_expires() {
     let server = MockServer::start_async().await;
     let mock = server
         .mock_async(|when, then| {
-            when.method(GET).path("/status");
+            when.method(GET).path("/alliances");
             then.status(200)
                 .header("content-type", "application/json")
                 .header("Date", http_date(0))
                 .header("Expires", http_date(60))
-                .body(STATUS_BODY);
+                .body(ALLIANCES_BODY);
         })
         .await;
     let client = client_for(&server);
 
-    let first = client.get_status().send().await.unwrap();
-    let second = client.get_status().send().await.unwrap();
+    let first = client.get_alliances().send().await.unwrap();
+    let second = client.get_alliances().send().await.unwrap();
 
     assert_eq!(
-        mock.hits_async().await,
+        mock.calls_async().await,
         1,
         "second request within the Expires window must be served from cache"
     );
-    assert_eq!(first.players, 777);
-    assert_eq!(second.players, first.players);
+    assert_eq!(first.len(), ALLIANCE_COUNT);
+    assert_eq!(second.len(), ALLIANCE_COUNT);
 }
 
 #[tokio::test]
@@ -56,19 +60,19 @@ async fn stale_response_revalidates_with_etag_and_resurrects_304() {
     // revalidation, but stale immediately.
     let initial = server
         .mock_async(|when, then| {
-            when.method(GET).path("/status");
+            when.method(GET).path("/alliances");
             then.status(200)
                 .header("content-type", "application/json")
                 .header("Date", http_date(0))
                 .header("Expires", http_date(0))
                 .header("ETag", "\"abc123\"")
-                .body(STATUS_BODY);
+                .body(ALLIANCES_BODY);
         })
         .await;
     let client = client_for(&server);
 
-    let first = client.get_status().send().await.unwrap();
-    assert_eq!(first.players, 777);
+    let first = client.get_alliances().send().await.unwrap();
+    assert_eq!(first.len(), ALLIANCE_COUNT);
     initial.delete_async().await;
 
     // Now the server only answers 304 — and only if the client presents
@@ -76,7 +80,7 @@ async fn stale_response_revalidates_with_etag_and_resurrects_304() {
     let revalidation = server
         .mock_async(|when, then| {
             when.method(GET)
-                .path("/status")
+                .path("/alliances")
                 .header("If-None-Match", "\"abc123\"");
             then.status(304)
                 .header("Date", http_date(0))
@@ -85,16 +89,17 @@ async fn stale_response_revalidates_with_etag_and_resurrects_304() {
         })
         .await;
 
-    let second = client.get_status().send().await.unwrap();
-    assert_eq!(revalidation.hits_async().await, 1);
+    let second = client.get_alliances().send().await.unwrap();
+    assert_eq!(revalidation.calls_async().await, 1);
     assert_eq!(
-        second.players, 777,
+        second.len(),
+        ALLIANCE_COUNT,
         "304 must transparently resurrect the cached body"
     );
 
     // The 304 carried a fresh Expires — a third call must not hit the
     // network at all.
-    let third = client.get_status().send().await.unwrap();
-    assert_eq!(revalidation.hits_async().await, 1);
-    assert_eq!(third.players, 777);
+    let third = client.get_alliances().send().await.unwrap();
+    assert_eq!(revalidation.calls_async().await, 1);
+    assert_eq!(third.len(), ALLIANCE_COUNT);
 }
