@@ -4,7 +4,7 @@ members = [".", "xtask"]
 
 [package]
 name = "eve-esi-client"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 rust-version = "1.85"
 description = "Complete, spec-generated Rust client for EVE Online's ESI API, with SSO, error-limit backoff, and cache handling built in"
