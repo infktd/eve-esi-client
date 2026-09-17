@@ -19,7 +19,7 @@ cargo add eve-esi-client
 Most ESI crates hand-implement endpoints and cover a subset. This crate
 compiles CCP's published spec ([pinned in-repo](spec/esi-latest.json))
 through [progenitor](https://github.com/oxidecomputer/progenitor), so
-coverage is **all 203 routes / 218 operations** — exactly what CCP ships,
+coverage is **all 218 routes / 233 operations** — exactly what CCP ships,
 including the current compatibility-date API surface (the modern ESI
 versioning; this crate pins and sends `X-Compatibility-Date` for you).
 
@@ -111,7 +111,7 @@ round-trip including the localhost callback listener.
 
 | | `eve-esi-client` | typical hand-written ESI crates |
 |---|---|---|
-| Endpoint coverage | All 203 routes, generated from CCP's spec | Partial, added endpoint-by-endpoint |
+| Endpoint coverage | All 218 routes, generated from CCP's spec | Partial, added endpoint-by-endpoint |
 | Tracks ESI changes | Scheduled spec watch → annotated PR | Manual maintenance |
 | Compatibility-date API | Yes, pinned + sent automatically | Mostly legacy versioned routes |
 | Rate-limit groups (429 avoidance) | Automatic, budgets from CCP's spec | Usually caller's responsibility |
