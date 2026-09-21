@@ -22,7 +22,8 @@ cargo run -p xtask -- fetch-spec [compatibility-date]
   resolves the requested date down to the newest published compatibility
   date not after it, and records the resolved date in the spec's
   `info.version`. `fetch-spec` requests today's date by default, i.e. the
-  newest surface.
+  newest surface. ESI rejects dates after its own calendar date, which it
+  keeps in UTC-11, so "today" is taken in UTC-12 rather than UTC.
 
 Do NOT use the legacy `https://esi.evetech.net/latest/swagger.json` route:
 it is Swagger 2.0, deprecated, and already behind the OpenAPI routes

@@ -36,17 +36,35 @@ fn main() {
 ///
 /// The spec surface is selected by ESI's compatibility-date versioning: the
 /// server resolves the requested date down to the newest published
-/// compatibility date that is not after it. Defaults to today (UTC), i.e.
-/// "the newest spec there is" — the resolved date is recorded by the server
-/// in the spec's own `info.version` field.
+/// compatibility date that is not after it. Defaults to today, i.e. "the
+/// newest spec there is" — the resolved date is recorded by the server in the
+/// spec's own `info.version` field.
+///
+/// "Today" must be ESI's today: it rejects dates after its own calendar date,
+/// which it keeps in UTC-11, with a 400 ("Compatibility date ... is in the
+/// future"). Taking today in UTC-12 — the earliest date anywhere on Earth —
+/// can never be ahead of ESI's clock; at worst a spec CCP published in the
+/// last hour is picked up by the next run.
 fn fetch_spec(compatibility_date: Option<&str>) {
-    let date = compatibility_date
-        .map(String::from)
-        .unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string());
+    let date = compatibility_date.map(String::from).unwrap_or_else(|| {
+        let earliest_timezone = chrono::FixedOffset::west_opt(12 * 3600).unwrap();
+        chrono::Utc::now()
+            .with_timezone(&earliest_timezone)
+            .format("%Y-%m-%d")
+            .to_string()
+    });
     let url = format!("{SPEC_URL}?compatibility_date={date}");
     eprintln!("fetching {url}");
 
-    let response = ureq::get(&url).call().expect("failed to fetch spec");
+    let response = match ureq::get(&url).call() {
+        Ok(response) => response,
+        Err(ureq::Error::Status(code, response)) => {
+            let body = response.into_string().unwrap_or_default();
+            eprintln!("ESI rejected the spec request with HTTP {code}: {body}");
+            std::process::exit(1);
+        }
+        Err(err) => panic!("failed to fetch spec: {err}"),
+    };
     let mut body = String::new();
     response
         .into_reader()
