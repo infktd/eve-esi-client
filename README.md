@@ -134,6 +134,13 @@ alternative.)
 - **Golden-file tested.** A pinned historical spec snapshot must generate a
   method for every one of its operations on every CI run, catching codegen
   regressions independently of CCP.
+- **Tagged unions are real enums.** ESI's `oneOf` unions (a sovereignty
+  claim is `{"faction": ..}`, `{"alliance": ..}` or `{"unclaimed": true}`)
+  generate enums you match on directly, e.g.
+  `SovereigntySystemsSolarsystemClaim::Alliance(alliance)`.
+  **Upgrading from 0.3.x:** untagged oneOf enums now discriminate correctly;
+  previously every value parsed as the first variant. See the
+  [CHANGELOG](CHANGELOG.md#040) for the 39 affected types.
 
 ## License
 

@@ -34,6 +34,7 @@ fn every_operation_in_the_pinned_spec_generates_a_method() {
     let mut spec_json: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
 
     normalize_responses(&mut spec_json);
+    require_union_discriminants(&mut spec_json);
     let compatibility_date = strip_compatibility_date_param(&mut spec_json);
     assert_eq!(compatibility_date, "2026-06-09");
 

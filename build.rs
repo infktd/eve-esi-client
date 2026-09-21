@@ -103,6 +103,9 @@ fn main() {
 
     let rate_limits = rate_limit_table(&raw);
     normalize_responses(&mut raw);
+    for unresolved in require_union_discriminants(&mut raw) {
+        println!("cargo:warning={unresolved}");
+    }
     let compatibility_date = strip_compatibility_date_param(&mut raw);
     let base_url = raw
         .pointer("/servers/0/url")

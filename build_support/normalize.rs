@@ -93,3 +93,103 @@ fn strip_compatibility_date_param(spec: &mut serde_json::Value) -> String {
     });
     date
 }
+
+/// ESI models tagged unions as a `oneOf` of single-property objects —
+/// `{"faction": {..}}` | `{"alliance": {..}}` | `{"unclaimed": true}` — but
+/// never marks the lone property `required`. Typify turns a non-required
+/// property into `Option` + `serde(default)`, so every branch accepts every
+/// object and the resulting enum deserializes every value as its *first*
+/// variant, silently dropping the payload.
+///
+/// For every `oneOf`/`anyOf` anywhere in the spec (components, inline
+/// schemas, array `items`, `additionalProperties`), mark the property of each
+/// single-property object branch as required. The property name *is* the
+/// discriminant, and with it required typify emits an externally tagged enum
+/// (`Alliance(SovereigntySystemsAlliance)`) that serde discriminates on the
+/// key itself.
+///
+/// Branches this rule can't safely fix are left untouched and returned so
+/// build.rs can surface them as `cargo:warning`s instead of mis-parsing in
+/// silence: multi-property object branches (which property discriminates
+/// would be a guess), and `$ref` branches to an under-constrained object
+/// (patching a shared component would change it everywhere it's used).
+fn require_union_discriminants(spec: &mut serde_json::Value) -> Vec<String> {
+    let mut branches = Vec::new();
+    collect_union_branches(spec, String::new(), &mut branches);
+
+    let mut unresolved = Vec::new();
+    for pointer in branches {
+        let Some(branch) = spec.pointer(&pointer) else {
+            continue;
+        };
+        if let Some(target) = branch.get("$ref").and_then(serde_json::Value::as_str) {
+            let target = target.to_string();
+            let resolved = target
+                .strip_prefix('#')
+                .and_then(|p| spec.pointer(p))
+                .and_then(underconstrained_object_properties);
+            if resolved.is_some() {
+                unresolved.push(format!(
+                    "{pointer}: union branch refers to {target}, an object with no `required` \
+                     list; its variant can't be discriminated and will mis-parse"
+                ));
+            }
+            continue;
+        }
+        match underconstrained_object_properties(branch).as_deref() {
+            None => {}
+            Some([only]) => {
+                let required = serde_json::Value::Array(vec![only.clone().into()]);
+                spec.pointer_mut(&pointer)
+                    .and_then(serde_json::Value::as_object_mut)
+                    .expect("branch pointer was just resolved to an object")
+                    .insert("required".to_string(), required);
+            }
+            Some(props) => unresolved.push(format!(
+                "{pointer}: union branch has properties {props:?} and no `required` list; \
+                 its variant can't be discriminated and will mis-parse"
+            )),
+        }
+    }
+    unresolved
+}
+
+/// JSON pointers of every `oneOf`/`anyOf` branch at or below `value`.
+fn collect_union_branches(value: &serde_json::Value, pointer: String, out: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(map) => {
+            for (key, child) in map {
+                let child_pointer =
+                    format!("{pointer}/{}", key.replace('~', "~0").replace('/', "~1"));
+                if matches!(key.as_str(), "oneOf" | "anyOf") {
+                    if let Some(branches) = child.as_array() {
+                        out.extend((0..branches.len()).map(|i| format!("{child_pointer}/{i}")));
+                    }
+                }
+                collect_union_branches(child, child_pointer, out);
+            }
+        }
+        serde_json::Value::Array(items) => {
+            for (i, child) in items.iter().enumerate() {
+                collect_union_branches(child, format!("{pointer}/{i}"), out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Property names of an object schema that declares properties but no
+/// (or an empty) `required` list; `None` for anything else.
+fn underconstrained_object_properties(schema: &serde_json::Value) -> Option<Vec<String>> {
+    let is_object = match schema.get("type") {
+        Some(ty) => ty == "object",
+        None => schema.get("properties").is_some(),
+    };
+    let has_required = schema
+        .get("required")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|r| !r.is_empty());
+    let properties = schema.get("properties")?.as_object()?;
+    (is_object && !has_required && !properties.is_empty())
+        .then(|| properties.keys().cloned().collect())
+}

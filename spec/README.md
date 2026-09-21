@@ -31,10 +31,10 @@ it is Swagger 2.0, deprecated, and already behind the OpenAPI routes
 
 ## Progenitor compatibility (verified 2026-07-05, progenitor 0.14.0)
 
-Two ESI response conventions hit unsupported cases in progenitor, so
-`build.rs` applies a small in-memory normalization before codegen. The
-committed file stays exactly what CCP publishes (modulo pretty-printing);
-nothing normalized is ever committed.
+Three ESI spec conventions hit unsupported or lossy cases in progenitor
+and typify (its type generator), so `build.rs` applies a small in-memory
+normalization before codegen. The committed file stays exactly what CCP
+publishes (modulo pretty-printing); nothing normalized is ever committed.
 
 1. **`default` responses** — every ESI operation declares a typed `200` plus
    a `default` response carrying the `Error` envelope. Progenitor counts
@@ -47,6 +47,20 @@ nothing normalized is ever committed.
    an empty `204` ("contract no longer available"). Progenitor supports one
    success shape per operation, so the `204` is dropped; at runtime a 204
    surfaces as `Error::UnexpectedResponse`, which callers can match on.
+3. **Undiscriminated `oneOf` unions** — ESI writes tagged unions as a `oneOf`
+   of single-property objects (`{"faction": ..}` | `{"alliance": ..}` |
+   `{"unclaimed": true}`) but never marks that property `required`. Typify
+   makes a non-required property `Option` + `serde(default)`, so the
+   resulting `#[serde(untagged)]` enum's first variant accepts every value
+   and all the others are unreachable. For every `oneOf`/`anyOf` anywhere in
+   the spec (components, inline schemas, `items`, `additionalProperties`),
+   each single-property object branch gets `required: [<that property>]`;
+   typify then emits an externally tagged enum that serde discriminates on
+   the key. Branches that can't be fixed without guessing (multi-property
+   objects without `required`, or a `$ref` to such an object, where patching
+   would change a shared component) are left alone and reported as
+   `cargo:warning`s. As of compatibility date 2026-08-18 the rule fixes 39
+   unions and warns about none.
 
 With these applied, progenitor 0.14.0 generates a client covering all
 203 paths (218 methods) that compiles cleanly (reqwest 0.13,
