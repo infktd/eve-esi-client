@@ -4,7 +4,7 @@ members = [".", "xtask"]
 
 [package]
 name = "eve-esi-client"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.85"
 description = "Complete, spec-generated Rust client for EVE Online's ESI API, with SSO, error-limit backoff, and cache handling built in"
@@ -45,6 +45,7 @@ uuid = { version = "1.0", features = ["serde", "v4"] }
 httpmock = "0.8"
 openapiv3 = "2.2"
 progenitor = "0.14"
+serde_path_to_error = "0.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
 [build-dependencies]
