@@ -222,6 +222,29 @@ impl RateLimiter {
         }
     }
 
+    /// Every group this client knows a budget for, as of now, ordered by
+    /// group name.
+    pub(crate) fn budgets(&self) -> Vec<crate::RateBudget> {
+        let mut state = self.lock();
+        let now = Instant::now();
+        let mut budgets: Vec<_> = state
+            .buckets
+            .iter_mut()
+            .map(|(group, bucket)| {
+                bucket.settle(now);
+                crate::RateBudget {
+                    group: group.clone(),
+                    max_tokens: bucket.max_tokens,
+                    window: bucket.window,
+                    remaining_estimate: bucket.available(),
+                    blocked_for: bucket.blocked_until.map(|until| until - now),
+                }
+            })
+            .collect();
+        budgets.sort_by(|a, b| a.group.cmp(&b.group));
+        budgets
+    }
+
     /// Records the rate-limit headers of a response to `operation_id`.
     pub(crate) fn record(&self, operation_id: &'static str, status: StatusCode, headers: &HeaderMap) {
         let header = |name| {
@@ -339,7 +362,7 @@ mod tests {
     fn spec_declares_rate_limits() {
         // If extraction from the spec's x-rate-limit extension silently broke,
         // the gate would never engage before a route's first response.
-        assert!(SPEC_RATE_LIMITED_OPERATIONS > 0);
+        const { assert!(SPEC_RATE_LIMITED_OPERATIONS > 0) };
     }
 
     #[test]
@@ -407,6 +430,34 @@ mod tests {
         bucket.settle(lifted);
         assert_eq!(bucket.blocked_until, None);
         assert_eq!(bucket.ready_at(lifted), lifted);
+    }
+
+    #[test]
+    fn budgets_report_settled_buckets_in_group_order() {
+        let limiter = RateLimiter::default();
+        let now = Instant::now();
+        {
+            let mut state = limiter.lock();
+            let mut held = Bucket::new(10, WINDOW);
+            held.observed = Some((0, now));
+            held.blocked_until = Some(now + Duration::from_secs(30));
+            state.buckets.insert("b-held".to_string(), held);
+            let mut busy = Bucket::new(20, WINDOW);
+            busy.spends.push_back((now, 4));
+            busy.in_flight = 5;
+            state.buckets.insert("a-busy".to_string(), busy);
+        }
+        let budgets = limiter.budgets();
+        assert_eq!(budgets.len(), 2);
+        assert_eq!(budgets[0].group, "a-busy");
+        assert_eq!(budgets[0].max_tokens, 20);
+        assert_eq!(budgets[0].window, WINDOW);
+        assert_eq!(budgets[0].remaining_estimate, 20 - 4 - 5);
+        assert_eq!(budgets[0].blocked_for, None);
+        assert_eq!(budgets[1].group, "b-held");
+        assert_eq!(budgets[1].remaining_estimate, 0);
+        let blocked_for = budgets[1].blocked_for.unwrap();
+        assert!(blocked_for <= Duration::from_secs(30) && blocked_for > Duration::from_secs(29));
     }
 
     #[test]

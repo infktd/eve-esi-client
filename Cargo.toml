@@ -4,7 +4,7 @@ members = [".", "xtask"]
 
 [package]
 name = "eve-esi-client"
-version = "0.5.0"
+version = "0.6.0"
 edition = "2021"
 rust-version = "1.85"
 description = "Complete, spec-generated Rust client for EVE Online's ESI API, with SSO, error-limit backoff, and cache handling built in"
@@ -25,7 +25,18 @@ include = [
     "LICENSE-APACHE",
 ]
 
+[features]
+default = ["rustls-aws-lc"]
+# rustls with the aws-lc-rs crypto provider (reqwest's default; builds aws-lc-sys).
+rustls-aws-lc = ["reqwest/rustls"]
+# rustls with no crypto provider compiled in: the application must install a
+# process-wide rustls CryptoProvider (e.g. ring) before building any client.
+rustls-no-provider = ["reqwest/rustls-no-provider"]
+# The platform TLS library (OpenSSL, Security.framework, SChannel).
+native-tls = ["reqwest/native-tls"]
+
 [dependencies]
+async-trait = "0.1"
 base64 = "0.22"
 bytes = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
@@ -34,7 +45,7 @@ http = "1"
 oauth2 = { version = "5", default-features = false }
 percent-encoding = "2.0"
 progenitor-client = "0.14"
-reqwest = { version = "0.13", features = ["json", "stream"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "charset", "http2", "system-proxy"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_urlencoded = "0.7"
@@ -45,6 +56,8 @@ uuid = { version = "1.0", features = ["serde", "v4"] }
 httpmock = "0.8"
 openapiv3 = "2.2"
 progenitor = "0.14"
+# Tests install ring as the CryptoProvider under `rustls-no-provider`.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 serde_path_to_error = "0.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 
