@@ -351,7 +351,7 @@ dependencies = [
 
 [[package]]
 name = "eve-esi-client"
-version = "0.6.0"
+version = "0.5.1"
 dependencies = [
  "async-trait",
  "base64",
