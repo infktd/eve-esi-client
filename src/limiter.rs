@@ -8,7 +8,7 @@
 //! drops to a configurable threshold, holds new requests until the window
 //! has reset.
 
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
 pub(crate) const ERROR_LIMIT_REMAIN: &str = "x-esi-error-limit-remain";
@@ -40,11 +40,31 @@ impl ErrorLimiter {
         }
     }
 
+    fn lock(&self) -> MutexGuard<'_, Option<Window>> {
+        // The state is a single Copy value, always written whole, so it is
+        // valid even if a panic poisoned the lock.
+        self.state.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// The error budget last reported by ESI, or `None` if nothing has been
+    /// reported yet or the reported window has since reset.
+    pub(crate) fn budget(&self) -> Option<crate::ErrorBudget> {
+        let window = (*self.lock())?;
+        let resets_in = window.reset_at.checked_duration_since(Instant::now())?;
+        if resets_in.is_zero() {
+            return None;
+        }
+        Some(crate::ErrorBudget {
+            remain: window.remain,
+            resets_in,
+        })
+    }
+
     /// Blocks (asynchronously) while the remaining error budget is at or
     /// below the threshold, until the current error window has reset.
     pub(crate) async fn acquire(&self) {
         let wait = {
-            let state = self.state.lock().unwrap();
+            let state = self.lock();
             match *state {
                 Some(w) if w.remain <= self.threshold => {
                     w.reset_at.checked_duration_since(Instant::now())
@@ -55,7 +75,7 @@ impl ErrorLimiter {
         if let Some(wait) = wait {
             // A little padding so we don't race the server's own clock.
             tokio::time::sleep(wait + Duration::from_millis(500)).await;
-            let mut state = self.state.lock().unwrap();
+            let mut state = self.lock();
             if let Some(w) = *state {
                 if Instant::now() >= w.reset_at {
                     *state = None;
@@ -77,7 +97,7 @@ impl ErrorLimiter {
         else {
             return;
         };
-        let mut state = self.state.lock().unwrap();
+        let mut state = self.lock();
         *state = Some(Window {
             remain,
             reset_at: Instant::now() + Duration::from_secs(u64::from(reset)),

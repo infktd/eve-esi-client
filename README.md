@@ -44,9 +44,10 @@ Every request through this client gets, with no configuration:
   every response; requests are held until the window resets once the
   remaining budget runs low, before you're anywhere near a 420.
 - **Cache correctness** — a route is never re-requested before its
-  `Expires` elapses (answered from a bounded in-memory cache), and stale
-  routes revalidate with `If-None-Match`, transparently resurrecting the
-  body on `304 Not Modified`. Bring your own storage? `.http_cache(false)`.
+  `Expires` elapses (answered from a bounded in-memory cache, or
+  [your own store](#bring-your-own-cache)), and stale routes revalidate with
+  `If-None-Match`, transparently resurrecting the body on
+  `304 Not Modified`.
 - **Compatibility-date pinning** — the required `X-Compatibility-Date`
   header is injected on every request, pinned to the exact date the crate's
   types were generated against. Your types and the wire format can't drift
@@ -107,6 +108,101 @@ time, and tokens refresh automatically ahead of expiry on any request. See
 [`examples/sso_login.rs`](examples/sso_login.rs) for the complete
 round-trip including the localhost callback listener.
 
+## TLS backends
+
+Choose the TLS stack with Cargo features:
+
+| Feature | TLS | Notes |
+|---|---|---|
+| `rustls-aws-lc` (default) | rustls + aws-lc-rs | Builds `aws-lc-sys`, which needs a C compiler and cmake |
+| `rustls-no-provider` | rustls, no crypto provider | No `aws-lc-sys`; you must install a provider (below) |
+| `native-tls` | OpenSSL / Security.framework / SChannel | The platform's TLS library |
+
+```toml
+eve-esi-client = { version = "0.6", default-features = false, features = ["rustls-no-provider"] }
+```
+
+Exactly one is needed; with none the crate fails to compile and says so.
+
+### Installing a rustls CryptoProvider
+
+With `rustls-no-provider`, the application must install a process-wide
+rustls [`CryptoProvider`](https://docs.rs/rustls/latest/rustls/crypto/struct.CryptoProvider.html)
+**before building any client** (`Client`, `SsoClient`, or a `reqwest::Client`
+you pass in). Otherwise reqwest panics when the client is built. For
+example, with ring (`rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }`):
+
+```rust,ignore
+fn main() {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .expect("no other CryptoProvider installed yet");
+    // ... now build eve_esi_client::Client, SsoClient, etc.
+}
+```
+
+## Bring your own HTTP client, SSO endpoints and cache
+
+Every piece of I/O can be routed through your own infrastructure:
+
+```rust,no_run
+# async fn run(http: reqwest::Client, cache: std::sync::Arc<dyn eve_esi_client::EsiCache>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+use eve_esi_client::auth::SsoClient;
+
+// Token requests through your client, e.g. one enforcing an egress
+// allow-list. Disable redirects on it, as the default client does.
+let sso = SsoClient::builder("your-client-id", "https://app.example/callback")
+    .token_url(eve_esi_client::SSO_TOKEN_URL) // or a proxy / test server
+    .http_client(http.clone())
+    .build()?;
+
+let client = eve_esi_client::Client::builder()
+    .user_agent("my-app/1.0 (contact@example.com)") // still sent on every request
+    .http_client(http)
+    .cache(cache)
+    .build()?;
+# Ok(())
+# }
+```
+
+Without `.http_client(..)`, the ESI and SSO clients each build a reqwest
+client with a 30-second request timeout and a 10-second connect timeout; the
+SSO one also sends an `eve-esi-client/<version>` `User-Agent` and never
+follows redirects.
+
+### Bring your own cache
+
+`EsiCache` is an async trait with `get`, `put` and `remove`, keyed by
+`CacheKey { url, principal }`, where `principal` is the bearer token's `sub`
+claim (so one character's authenticated responses are never served to
+another). Entries are `CachedResponse` values with public fields and an
+absolute `expires_at: SystemTime`, so a database-backed cache survives
+restarts; see the `CachedResponse` docs for rebuilding one from a row.
+`.http_cache(false)` turns caching off entirely.
+
+Responses served from a cache are marked `x-esi-client-cache: hit`, or
+`revalidated` after a `304`, and never replay the error- or rate-limit
+headers they were stored with.
+
+### Error and rate budgets
+
+Read budgets from the client rather than parsing response headers:
+
+```rust,no_run
+# fn run(client: &eve_esi_client::Client) {
+if let Some(budget) = client.error_budget() {
+    println!("{} errors left, window resets in {:?}", budget.remain, budget.resets_in);
+}
+for group in client.rate_budgets() {
+    println!("{}: ~{}/{} tokens per {:?}", group.group, group.remaining_estimate, group.max_tokens, group.window);
+}
+# }
+```
+
+For requests that must never be cached but should still share backoff,
+build a second client from `client.inner().without_cache()` with
+`Client::new_with_client`.
+
 ## How it compares
 
 | | `eve-esi-client` | typical hand-written ESI crates |
@@ -116,7 +212,7 @@ round-trip including the localhost callback listener.
 | Compatibility-date API | Yes, pinned + sent automatically | Mostly legacy versioned routes |
 | Rate-limit groups (429 avoidance) | Automatic, budgets from CCP's spec | Usually caller's responsibility |
 | Error-limit backoff | Automatic | Usually caller's responsibility |
-| `Expires`/`ETag`/304 handling | Automatic, in-memory | Usually caller's responsibility |
+| `Expires`/`ETag`/304 handling | Automatic, in-memory or your own store | Usually caller's responsibility |
 | SSO (PKCE) + auto-refresh | Built in | Varies |
 
 (If you only need a handful of endpoints and prefer a curated wrapper,
@@ -130,7 +226,8 @@ alternative.)
   spec version they ship with.
 - **Faithful bindings, thin wrapper.** The generated API mirrors ESI's
   shape; the hand-written layer is auth + rate-limit + cache, not a
-  re-modeling. No trading logic, no persistence, no opinions.
+  re-modeling. No trading logic, no built-in persistence (plug in your own
+  cache), no opinions.
 - **Golden-file tested.** A pinned historical spec snapshot must generate a
   method for every one of its operations on every CI run, catching codegen
   regressions independently of CCP.

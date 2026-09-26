@@ -4,6 +4,95 @@ Changes to the crate itself. Routine spec refreshes are released
 automatically and listed on the
 [GitHub releases page](https://github.com/infktd/eve-esi-client/releases).
 
+## 0.6.0
+
+### Breaking: the TLS backend is a Cargo feature
+
+reqwest's default features are no longer enabled, so aws-lc-sys (a C/cmake
+build) is no longer unavoidable. Pick a backend:
+
+- `rustls-aws-lc` (default): rustls with aws-lc-rs, the same as before.
+- `rustls-no-provider`: rustls with no crypto provider, so no aws-lc-sys.
+  Your application must install a process-wide rustls `CryptoProvider`
+  (for example ring) before building any client, or reqwest panics. See
+  [the README](README.md#installing-a-rustls-cryptoprovider).
+- `native-tls`: the platform's TLS library.
+
+reqwest's `charset`, `http2` and `system-proxy` features stay on.
+
+Migrating: nothing changes with default features. If you depend on this
+crate with `default-features = false`, it now fails to compile until you
+enable one of the three features; previously you silently got rustls with
+aws-lc-rs.
+
+### Configurable HTTP clients and SSO endpoints
+
+- `SsoClient::builder(client_id, redirect_uri)` with `.authorize_url(..)`,
+  `.token_url(..)` and `.http_client(reqwest::Client)`. `SsoClient::new` is
+  shorthand for the defaults, which are still `SSO_AUTHORIZE_URL` and
+  `SSO_TOKEN_URL`.
+- `ClientBuilder::http_client(reqwest::Client)` sends ESI requests through
+  your client. `User-Agent` and `X-Compatibility-Date` are still added to
+  every request.
+- The HTTP clients built when you don't supply one now have a 30-second
+  request timeout and a 10-second connect timeout (`DEFAULT_TIMEOUT`,
+  `DEFAULT_CONNECT_TIMEOUT`); before, they had none. The SSO client's also
+  identifies itself as `eve-esi-client/<version>` and no longer follows
+  redirects, so a redirecting token endpoint now fails with
+  `AuthError::Unreachable` instead of forwarding the code or refresh token.
+
+### Pluggable response cache
+
+- New `EsiCache` async trait (`get`, `put`, `remove`), keyed by
+  `CacheKey { url, principal }`. `principal` is the bearer token's `sub`
+  claim, so a cache shared between clients never serves one character's
+  authenticated responses to another; a request whose bearer token has no
+  readable `sub` is not cached. Implement it with `#[eve_esi_client::async_trait]`.
+- `CachedResponse` has public fields (status, headers, body, ETag, and an
+  absolute `expires_at: SystemTime`), so a persistent cache can store and
+  rebuild entries and survives restarts. Its docs show how.
+- `ClientBuilder::cache(Arc<dyn EsiCache>)` installs one. `MemoryCache`, the
+  previous in-memory cache, is the default. `http_cache(false)` still turns
+  caching off, including a cache passed to `cache(..)`.
+- Unchanged: only GETs are cached, freshness is measured from ESI's `Date`
+  and capped at 24 hours.
+
+### Fixed: cached responses replayed stale budget headers
+
+A cache hit or a revalidated 304 used to return the stored response's
+original headers, including `X-ESI-Error-Limit-*` and `X-Ratelimit-*` from
+when it was first fetched, and looked exactly like a fresh response. Now:
+
+- responses answered from the cache carry `x-esi-client-cache: hit` and no
+  budget headers;
+- responses resurrected from a 304 carry `x-esi-client-cache: revalidated`,
+  with the stored headers updated from the 304's own (whose budget headers
+  are current);
+- stored entries never keep budget headers.
+
+Responses fetched from ESI are unchanged and carry no marker.
+
+### Readable budgets
+
+- `EsiInner::error_budget()` / `Client::error_budget()` return
+  `Option<ErrorBudget { remain, resets_in }>`.
+- `EsiInner::rate_budgets()` / `Client::rate_budgets()` return a
+  `Vec<RateBudget { group, max_tokens, window, remaining_estimate, blocked_for }>`.
+
+Both are `#[non_exhaustive]`. Read budgets from these instead of from
+response headers.
+
+### Other additions
+
+- `EsiInner::without_cache()`: the same limiters, authenticator and default
+  headers without a cache, for requests that must never be cached but should
+  share backoff with the main client.
+- `auth::PkceCodeVerifier` and `auth::CsrfToken` are re-exported, and so is
+  the whole `oauth2` crate (`eve_esi_client::oauth2`), so a stored verifier
+  can be rebuilt without depending on the same oauth2 version yourself.
+- A poisoned lock in the cache or the error limiter no longer panics; their
+  state is always written whole, so it stays usable.
+
 ## 0.5.0
 
 ### Breaking: SSO token failures are distinguishable by kind

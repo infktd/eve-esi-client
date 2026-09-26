@@ -10,10 +10,78 @@ permissions:
 
 jobs:
   test:
+    name: test (${{ matrix.name }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            features: ""
+          # Tests install ring as the process-wide CryptoProvider.
+          - name: rustls-no-provider
+            features: --no-default-features --features rustls-no-provider
+          # Uses the runner's OpenSSL.
+          - name: native-tls
+            features: --no-default-features --features native-tls
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo build
-      - run: cargo test
+        with:
+          key: ${{ matrix.name }}
+      - run: cargo build ${{ matrix.features }}
+      - run: cargo test ${{ matrix.features }}
+
+  clippy:
+    name: clippy (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: default
+            features: ""
+          - name: rustls-no-provider
+            features: --no-default-features --features rustls-no-provider
+          - name: native-tls
+            features: --no-default-features --features native-tls
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: clippy-${{ matrix.name }}
+      - run: cargo clippy --all-targets ${{ matrix.features }} -- -D warnings
+
+  # Cargo.lock lists aws-lc-sys whatever the features (weak `dep?/feature`
+  # entries keep it there), so check the resolved feature graph instead.
+  no-aws-lc:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: aws-lc-sys is not built under rustls-no-provider
+        run: |
+          # cargo exits 101 with "did not match any packages" when aws-lc-sys
+          # is absent from the graph; anything it prints otherwise means it's
+          # still being built.
+          set +e
+          out=$(cargo tree -i aws-lc-sys -e features --target all \
+            --no-default-features --features rustls-no-provider 2>&1)
+          status=$?
+          set -e
+          if [ $status -eq 0 ] && [ -n "$out" ]; then
+            echo "aws-lc-sys is still in the rustls-no-provider build:"
+            echo "$out"
+            exit 1
+          fi
+          if [ $status -ne 0 ] && ! grep -q "did not match any packages" <<<"$out"; then
+            echo "$out"
+            exit 1
+          fi
+          echo "aws-lc-sys is not in the rustls-no-provider build"
+      - name: sanity check that the default build does use aws-lc-sys
+        run: cargo tree -i aws-lc-sys -e features --target all | grep -q '^aws-lc-sys'

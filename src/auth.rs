@@ -24,10 +24,14 @@ use std::time::{Duration, SystemTime};
 use base64::Engine as _;
 use oauth2::basic::BasicClient;
 use oauth2::{
-    AuthUrl, AuthorizationCode, ClientId, CsrfToken, EndpointNotSet, EndpointSet,
-    PkceCodeChallenge, PkceCodeVerifier, RedirectUrl, RefreshToken, RequestTokenError, Scope,
-    TokenResponse as _, TokenUrl,
+    AuthUrl, AuthorizationCode, ClientId, EndpointNotSet, EndpointSet, PkceCodeChallenge,
+    RedirectUrl, RefreshToken, RequestTokenError, Scope, TokenResponse as _, TokenUrl,
 };
+
+/// Re-exported from [`oauth2`] because [`PendingAuthorization`] and
+/// [`SsoClient::exchange`] use them: rebuild a stored verifier with
+/// `PkceCodeVerifier::new(secret)` without depending on `oauth2` yourself.
+pub use oauth2::{CsrfToken, PkceCodeVerifier};
 
 type ConfiguredClient =
     BasicClient<EndpointSet, EndpointNotSet, EndpointNotSet, EndpointNotSet, EndpointSet>;
@@ -151,6 +155,90 @@ pub struct SsoClient {
     http: BridgeClient,
 }
 
+/// Builds an [`SsoClient`]; start with [`SsoClient::builder`].
+#[derive(Debug)]
+pub struct SsoClientBuilder {
+    client_id: String,
+    redirect_uri: String,
+    authorize_url: Option<String>,
+    token_url: Option<String>,
+    http_client: Option<reqwest::Client>,
+}
+
+impl SsoClientBuilder {
+    /// Where [`SsoClient::authorize`] sends the user (defaults to
+    /// [`crate::SSO_AUTHORIZE_URL`]).
+    pub fn authorize_url(mut self, url: impl Into<String>) -> Self {
+        self.authorize_url = Some(url.into());
+        self
+    }
+
+    /// Where codes and refresh tokens are exchanged (defaults to
+    /// [`crate::SSO_TOKEN_URL`]).
+    pub fn token_url(mut self, url: impl Into<String>) -> Self {
+        self.token_url = Some(url.into());
+        self
+    }
+
+    /// Send token requests through `client` instead of a default one.
+    ///
+    /// Disable redirects on it (`reqwest::redirect::Policy::none()`), as the
+    /// default client does: a token endpoint that redirects could otherwise
+    /// forward the authorization code or refresh token elsewhere.
+    pub fn http_client(mut self, client: reqwest::Client) -> Self {
+        self.http_client = Some(client);
+        self
+    }
+
+    /// Fails with [`AuthError::Config`] on an invalid URL, or if the default
+    /// HTTP client can't be built.
+    ///
+    /// The default client identifies itself as `eve-esi-client/<version>`,
+    /// allows [`crate::DEFAULT_TIMEOUT`] per request and
+    /// [`crate::DEFAULT_CONNECT_TIMEOUT`] to connect, and never follows
+    /// redirects.
+    pub fn build(self) -> Result<SsoClient, AuthError> {
+        let config = |e: oauth2::url::ParseError| AuthError::Config(e.to_string());
+        let oauth = BasicClient::new(ClientId::new(self.client_id))
+            .set_auth_uri(
+                AuthUrl::new(
+                    self.authorize_url
+                        .unwrap_or_else(|| crate::SSO_AUTHORIZE_URL.to_string()),
+                )
+                .map_err(config)?,
+            )
+            .set_token_uri(
+                TokenUrl::new(
+                    self.token_url
+                        .unwrap_or_else(|| crate::SSO_TOKEN_URL.to_string()),
+                )
+                .map_err(config)?,
+            )
+            .set_redirect_uri(RedirectUrl::new(self.redirect_uri).map_err(config)?);
+        let http = match self.http_client {
+            Some(client) => client,
+            None => reqwest::Client::builder()
+                .user_agent(DEFAULT_USER_AGENT)
+                .timeout(crate::DEFAULT_TIMEOUT)
+                .connect_timeout(crate::DEFAULT_CONNECT_TIMEOUT)
+                .redirect(reqwest::redirect::Policy::none())
+                .build()
+                .map_err(|e| AuthError::Config(error_with_sources(&e)))?,
+        };
+        Ok(SsoClient {
+            oauth,
+            http: BridgeClient(http),
+        })
+    }
+}
+
+/// Sent by the default SSO HTTP client.
+const DEFAULT_USER_AGENT: &str = concat!(
+    "eve-esi-client/",
+    env!("CARGO_PKG_VERSION"),
+    " (+https://github.com/infktd/eve-esi-client)"
+);
+
 /// A pending authorization: send the user to `url`, keep `pkce_verifier`
 /// and `csrf_state` for the callback.
 pub struct PendingAuthorization {
@@ -162,32 +250,26 @@ pub struct PendingAuthorization {
 impl SsoClient {
     /// `redirect_uri` must exactly match one registered for the
     /// application, e.g. `http://localhost:8787/callback`.
+    ///
+    /// Shorthand for `SsoClient::builder(client_id, redirect_uri).build()`:
+    /// CCP's published endpoints and a default HTTP client.
     pub fn new(client_id: impl Into<String>, redirect_uri: &str) -> Result<Self, AuthError> {
-        Self::with_token_url(client_id.into(), redirect_uri, crate::SSO_TOKEN_URL)
+        Self::builder(client_id, redirect_uri).build()
     }
 
-    fn with_token_url(
-        client_id: String,
-        redirect_uri: &str,
-        token_url: &str,
-    ) -> Result<Self, AuthError> {
-        let oauth = BasicClient::new(ClientId::new(client_id))
-            .set_auth_uri(
-                AuthUrl::new(crate::SSO_AUTHORIZE_URL.to_string())
-                    .map_err(|e| AuthError::Config(e.to_string()))?,
-            )
-            .set_token_uri(
-                TokenUrl::new(token_url.to_string())
-                    .map_err(|e| AuthError::Config(e.to_string()))?,
-            )
-            .set_redirect_uri(
-                RedirectUrl::new(redirect_uri.to_string())
-                    .map_err(|e| AuthError::Config(e.to_string()))?,
-            );
-        Ok(Self {
-            oauth,
-            http: BridgeClient(reqwest::Client::new()),
-        })
+    /// Configure the SSO endpoints or the HTTP client token requests go
+    /// through.
+    pub fn builder(
+        client_id: impl Into<String>,
+        redirect_uri: impl Into<String>,
+    ) -> SsoClientBuilder {
+        SsoClientBuilder {
+            client_id: client_id.into(),
+            redirect_uri: redirect_uri.into(),
+            authorize_url: None,
+            token_url: None,
+            http_client: None,
+        }
     }
 
     /// Build the browser authorization URL for the given ESI scopes
@@ -288,13 +370,18 @@ impl TokenSet {
     }
 
     fn claim(&self, name: &str) -> Option<serde_json::Value> {
-        let payload = self.access_token.split('.').nth(1)?;
-        let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-            .decode(payload)
-            .ok()?;
-        let claims: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-        Some(claims.get(name)?.clone())
+        jwt_claim(&self.access_token, name)
     }
+}
+
+/// A claim from a JWT's payload, read without verifying its signature.
+pub(crate) fn jwt_claim(token: &str, name: &str) -> Option<serde_json::Value> {
+    let payload = token.split('.').nth(1)?;
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(payload)
+        .ok()?;
+    let mut claims: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    Some(claims.get_mut(name)?.take())
 }
 
 /// Owns a [`TokenSet`] and refreshes it before expiry. Pass to
@@ -407,6 +494,15 @@ mod tests {
         ))
     }
 
+    /// Under `rustls-no-provider` nothing can build a reqwest client until a
+    /// CryptoProvider is installed; these tests use ring.
+    fn install_crypto_provider() {
+        #[cfg(feature = "rustls-no-provider")]
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    }
+
+    const TOKEN_RESPONSE: &str = r#"{"access_token":"access","token_type":"Bearer","expires_in":1199,"refresh_token":"next-refresh"}"#;
+
     /// A localhost URL nothing is listening on.
     fn closed_port_url() -> String {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
@@ -502,6 +598,7 @@ mod tests {
 
     #[tokio::test]
     async fn transport_failure_is_unreachable_and_transient() {
+        install_crypto_provider();
         let reqwest_error = reqwest::Client::new()
             .post(closed_port_url())
             .send()
@@ -540,6 +637,7 @@ mod tests {
     /// `refresh` and `exchange` both go through the mapping, end to end.
     #[tokio::test]
     async fn refresh_and_exchange_classify_real_token_endpoint_failures() {
+        install_crypto_provider();
         let rejecting = MockServer::start_async().await;
         rejecting
             .mock_async(|when, then| {
@@ -566,12 +664,10 @@ mod tests {
             (cloudflare.url("/v2/oauth/token"), false),
             (closed_port_url(), false),
         ] {
-            let sso = SsoClient::with_token_url(
-                "test-client".into(),
-                "http://localhost:8787/callback",
-                &token_url,
-            )
-            .unwrap();
+            let sso = SsoClient::builder("test-client", "http://localhost:8787/callback")
+                .token_url(&token_url)
+                .build()
+                .unwrap();
             let refreshed = sso.refresh("stale-refresh-token").await.unwrap_err();
             let exchanged = sso
                 .exchange("auth-code", PkceCodeVerifier::new("v".repeat(43)))
@@ -592,5 +688,129 @@ mod tests {
                 assert_eq!(err.is_permanent(), permanent, "{token_url}: {err:?}");
             }
         }
+    }
+
+    #[test]
+    fn builder_overrides_the_authorize_url() {
+        install_crypto_provider();
+        let sso = SsoClient::builder("test-client", "http://localhost:8787/callback")
+            .authorize_url("https://sso.example.test/v2/oauth/authorize")
+            .build()
+            .unwrap();
+        let pending = sso.authorize(["esi-location.read_location.v1"]);
+        assert!(
+            pending
+                .url
+                .starts_with("https://sso.example.test/v2/oauth/authorize?"),
+            "{}",
+            pending.url
+        );
+        assert!(
+            pending.url.contains("client_id=test-client"),
+            "{}",
+            pending.url
+        );
+
+        let default = SsoClient::new("test-client", "http://localhost:8787/callback").unwrap();
+        let pending = default.authorize(["esi-location.read_location.v1"]);
+        assert!(
+            pending.url.starts_with(crate::SSO_AUTHORIZE_URL),
+            "{}",
+            pending.url
+        );
+    }
+
+    #[test]
+    fn invalid_urls_are_config_errors() {
+        install_crypto_provider();
+        for builder in [
+            SsoClient::builder("c", "http://localhost:8787/callback").authorize_url("not a url"),
+            SsoClient::builder("c", "http://localhost:8787/callback").token_url("not a url"),
+            SsoClient::builder("c", "not a url"),
+        ] {
+            let err = builder.build().unwrap_err();
+            assert!(matches!(err, AuthError::Config(_)), "{err:?}");
+        }
+    }
+
+    /// Token requests go through the caller's client, e.g. one that enforces
+    /// an egress allow-list.
+    #[tokio::test]
+    async fn token_requests_use_the_supplied_http_client() {
+        install_crypto_provider();
+        let server = MockServer::start_async().await;
+        let token = server
+            .mock_async(|when, then| {
+                when.method(POST)
+                    .path("/v2/oauth/token")
+                    .header("x-egress", "allow-listed");
+                then.status(200)
+                    .header("content-type", "application/json")
+                    .body(TOKEN_RESPONSE);
+            })
+            .await;
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert("x-egress", "allow-listed".parse().unwrap());
+        let http = reqwest::Client::builder()
+            .default_headers(headers)
+            .build()
+            .unwrap();
+        let sso = SsoClient::builder("test-client", "http://localhost:8787/callback")
+            .token_url(server.url("/v2/oauth/token"))
+            .http_client(http)
+            .build()
+            .unwrap();
+
+        let tokens = sso.refresh("refresh").await.unwrap();
+        let exchanged = sso
+            .exchange("auth-code", PkceCodeVerifier::new("v".repeat(43)))
+            .await
+            .unwrap();
+        assert_eq!(token.calls_async().await, 2);
+        assert_eq!(tokens.access_token, "access");
+        assert_eq!(exchanged.refresh_token.as_deref(), Some("next-refresh"));
+    }
+
+    /// The default client names the crate and doesn't forward a token
+    /// request to wherever the endpoint redirects.
+    #[tokio::test]
+    async fn default_client_identifies_itself_and_refuses_redirects() {
+        install_crypto_provider();
+        let elsewhere = MockServer::start_async().await;
+        let stolen = elsewhere
+            .mock_async(|when, then| {
+                when.any_request();
+                then.status(200)
+                    .header("content-type", "application/json")
+                    .body(TOKEN_RESPONSE);
+            })
+            .await;
+        let server = MockServer::start_async().await;
+        let token = server
+            .mock_async(|when, then| {
+                when.method(POST)
+                    .path("/v2/oauth/token")
+                    .header_prefix("user-agent", "eve-esi-client/");
+                then.status(307)
+                    .header("location", elsewhere.url("/v2/oauth/token"));
+            })
+            .await;
+        let sso = SsoClient::builder("test-client", "http://localhost:8787/callback")
+            .token_url(server.url("/v2/oauth/token"))
+            .build()
+            .unwrap();
+
+        let err = sso.refresh("refresh").await.unwrap_err();
+        assert_eq!(token.calls_async().await, 1);
+        assert_eq!(stolen.calls_async().await, 0, "redirect was followed");
+        assert!(!err.is_permanent(), "{err:?}");
+    }
+
+    #[test]
+    fn oauth2_types_are_reexported() {
+        let verifier: PkceCodeVerifier = crate::oauth2::PkceCodeVerifier::new("v".repeat(43));
+        assert_eq!(verifier.secret(), &"v".repeat(43));
+        let state: crate::auth::CsrfToken = CsrfToken::new("state".into());
+        assert_eq!(state.secret(), "state");
     }
 }

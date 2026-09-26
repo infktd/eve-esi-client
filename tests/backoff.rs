@@ -13,9 +13,12 @@ use std::time::{Duration, Instant};
 
 use httpmock::prelude::*;
 
+mod common;
+
 const ALLIANCES_BODY: &str = "[99000001, 99000002, 99000003]";
 
 fn client_for(server: &MockServer) -> eve_esi_client::Client {
+    common::install_crypto_provider();
     eve_esi_client::Client::builder()
         .user_agent("eve-esi tests")
         .base_url(server.base_url())
