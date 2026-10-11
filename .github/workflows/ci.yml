@@ -24,6 +24,9 @@ jobs:
           # Uses the runner's OpenSSL.
           - name: native-tls
             features: --no-default-features --features native-tls
+          # JwtVerifier (pure-Rust RSA).
+          - name: verify
+            features: --features verify
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
@@ -46,6 +49,8 @@ jobs:
             features: --no-default-features --features rustls-no-provider
           - name: native-tls
             features: --no-default-features --features native-tls
+          - name: verify
+            features: --features verify
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable

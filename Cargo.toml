@@ -34,6 +34,9 @@ rustls-aws-lc = ["reqwest/rustls"]
 rustls-no-provider = ["reqwest/rustls-no-provider"]
 # The platform TLS library (OpenSSL, Security.framework, SChannel).
 native-tls = ["reqwest/native-tls"]
+# auth::JwtVerifier: verify access-token signatures against EVE SSO's
+# published keys (pure-Rust RSA; no extra C or TLS dependencies).
+verify = ["dep:rsa"]
 
 [dependencies]
 async-trait = "0.1"
@@ -46,6 +49,7 @@ oauth2 = { version = "5", default-features = false }
 percent-encoding = "2.0"
 progenitor-client = "0.14"
 reqwest = { version = "0.13", default-features = false, features = ["json", "stream", "charset", "http2", "system-proxy"] }
+rsa = { version = "0.9", optional = true, default-features = false, features = ["std", "sha2"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_urlencoded = "0.7"
@@ -56,10 +60,15 @@ uuid = { version = "1.0", features = ["serde", "v4"] }
 httpmock = "0.8"
 openapiv3 = "2.2"
 progenitor = "0.14"
+# Seeds the throwaway RSA key the `verify` tests sign with.
+rand_chacha = "0.3"
 # Tests install ring as the CryptoProvider under `rustls-no-provider`.
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 serde_path_to_error = "0.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
+[package.metadata.docs.rs]
+features = ["verify"]
 
 [build-dependencies]
 heck = "0.5"

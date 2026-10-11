@@ -108,6 +108,61 @@ time, and tokens refresh automatically ahead of expiry on any request. See
 [`examples/sso_login.rs`](examples/sso_login.rs) for the complete
 round-trip including the localhost callback listener.
 
+## Servers acting for many characters
+
+A web application registered with a client secret, holding tokens for
+thousands of characters, keeps **one** client (one error budget, one set of
+rate-limit groups, one cache) and derives a cheap per-character client for
+each request:
+
+```rust,no_run
+# use std::sync::Arc;
+# async fn run(stored_refresh_token: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+use eve_esi_client::auth::{AuthError, Authenticator, RefreshListener, SsoClient, TokenSet};
+
+let sso = Arc::new(
+    SsoClient::builder("your-client-id", "https://app.example/auth/cb")
+        .client_secret("your-client-secret") // HTTP Basic on exchange and refresh
+        .build()?,
+);
+let esi = eve_esi_client::Client::builder()
+    .user_agent("my-app/1.0 (contact@example.com)")
+    .build()?;
+
+/// EVE rotates refresh tokens: store each new one, drop revoked ones.
+struct Store;
+#[eve_esi_client::async_trait]
+impl RefreshListener for Store {
+    async fn refreshed(&self, tokens: &TokenSet) { /* UPDATE ... */ }
+    async fn refresh_failed(&self, _tokens: &TokenSet, error: &AuthError) {
+        if error.is_revoked() { /* DELETE ...; the user must log in again */ }
+    }
+}
+
+let tokens = sso.refresh(stored_refresh_token).await?;
+let claims = tokens.claims().expect("EVE access tokens are JWTs");
+assert!(claims.has_scope("esi-fleets.read_fleet.v1"));
+let auth = Authenticator::with_shared_client(sso.clone(), tokens).with_listener(Arc::new(Store));
+
+let as_character = esi.with_token_provider(Arc::new(auth)); // shares limits and cache
+let fleet = as_character
+    .get_characters_character_id_fleet()
+    .character_id(claims.character_id.unwrap() as i64)
+    .send()
+    .await?;
+# Ok(())
+# }
+```
+
+- Implement `auth::TokenProvider` over your own store, or fetch a token
+  yourself and call `esi.with_access_token(token)`.
+- The cache is keyed by the token's character, so it is safe to share.
+- `ErrorExt::esi_message()` and `Error::status()` read ESI's error
+  responses, including non-JSON ones from a proxy in front of ESI.
+- With the `verify` feature, `auth::JwtVerifier` checks a token's signature
+  against EVE SSO's published keys, for tokens you didn't receive from EVE
+  SSO yourself.
+
 ## TLS backends
 
 Choose the TLS stack with Cargo features:

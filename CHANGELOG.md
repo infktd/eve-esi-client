@@ -6,6 +6,98 @@ automatically and listed on the
 
 ## 0.6.0
 
+Server support: one client acting for many characters. Everything here is
+additive; the behavior changes are listed at the end.
+
+### Confidential (web) SSO applications
+
+- `SsoClientBuilder::client_secret(..)`: code exchanges and refreshes
+  authenticate with HTTP Basic, as EVE SSO requires for applications
+  registered with a secret. Refresh tokens issued to such an application
+  keep refreshing. PKCE stays the default and still works with a secret.
+- `SsoClient::authorize_without_pkce(scopes, state)` and
+  `SsoClient::exchange_without_pkce(code)` for flows that can't keep a PKCE
+  verifier until the callback. Both need a client secret and fail with
+  `AuthError::Config` without one.
+- `SsoClient::authorize_with_state(scopes, state)`: PKCE with a `state` of
+  your choosing.
+- `SsoClient::refresh_with_scopes(refresh_token, scopes)` sends OAuth's
+  `scope` parameter on a refresh.
+- `SsoClient::is_confidential()`.
+
+### Many principals, one budget and cache
+
+- New `auth::TokenProvider` trait (async, object-safe): a source of access
+  tokens for one principal. `Authenticator` implements it, as does the new
+  `auth::StaticToken`.
+- `Client::with_token_provider(Arc<dyn TokenProvider>)`,
+  `Client::with_access_token(token)` and `Client::without_auth()` return a
+  client for another principal that shares this one's HTTP pool, error and
+  rate limiters, cache and default headers. The cache stays keyed by the
+  token's `sub`, so characters never see each other's responses.
+- `EsiInner::with_auth(Option<Arc<dyn TokenProvider>>)` is the same at the
+  `EsiInner` level, and `ClientBuilder::token_provider(..)` installs a
+  provider at build time.
+- `Authenticator::with_shared_client(Arc<SsoClient>, tokens)` shares one
+  SSO client between many authenticators.
+
+### Persisting rotated refresh tokens
+
+- New `auth::RefreshListener` trait, registered with
+  `Authenticator::with_listener(..)`: `refreshed(&TokenSet)` after every
+  successful refresh (store the rotated refresh token here) and
+  `refresh_failed(&TokenSet, &AuthError)` after a failed one. Both run
+  before the authenticator releases its lock, so concurrent requests wait
+  for one refresh and tokens are stored in the order EVE issued them.
+- `Authenticator::with_refresh_scopes(..)` requests specific scopes on each
+  refresh.
+- `AuthError::is_revoked()`: `true` only for `invalid_grant` and
+  `invalid_token`, i.e. this token is dead and should be deleted. Unlike
+  `is_permanent()` it is `false` for client-level rejections
+  (`invalid_client`, `unauthorized_client`), so a misconfigured secret
+  doesn't make a server delete every stored token.
+
+### Token claims
+
+- New `auth::TokenClaims`, read from an access token with
+  `TokenClaims::from_jwt_unverified(..)` or `TokenSet::claims()`: subject,
+  character ID and name, owner hash, scopes (`scp` as a string or an
+  array), expiry and issue time, issuer, audience and authorized party,
+  plus `has_scope(..)` and `is_expired()`.
+- `TokenSet::scopes()`, `TokenSet::owner_hash()`, and
+  `TokenSet::expires_within(..)` (now public).
+- New `verify` feature: `auth::JwtVerifier` checks an access token's RS256
+  signature against EVE SSO's key set (`SSO_JWKS_URL`, fetched on first use
+  and again for an unknown key), its issuer, audience and expiry, and
+  returns its claims. It adds the pure-Rust `rsa` crate and nothing else.
+
+### Readable error responses
+
+- New `ErrorExt` trait on `Error<types::Error>`: `esi_message()` (ESI's
+  `error` text) and `esi_error()`. The status is `Error::status()`.
+- Error responses (4xx/5xx) whose body isn't ESI's error JSON, such as a
+  proxy's HTML page or an empty body, are rewritten to
+  `{"error": <body text or the status's reason>, "status": <code>}`.
+
+### Behavior changes
+
+- Such error responses now arrive as `Error::ErrorResponse` with their
+  status (and `is_retryable()` where the status is retryable). They used to
+  fail as `Error::InvalidResponsePayload`, which has no status.
+- `SsoClient::refresh` keeps the refresh token it was given when EVE's
+  response doesn't include one. `Authenticator` used to drop it and fail
+  the next refresh with `AuthError::NoRefreshToken`.
+- `TokenSet::character_id()` only reads subjects of the form
+  `CHARACTER:EVE:<id>`; it used to take any trailing number.
+- A token response without `expires_in` takes its expiry from the JWT's
+  `exp` claim instead of never expiring.
+
+## 0.5.1
+
+Published as 0.5.1 by a release-automation bug, although it contains breaking
+changes (it was prepared as 0.6.0) and has been yanked. Upgrade to 0.6.0.
+
+
 ### Breaking: the TLS backend is a Cargo feature
 
 reqwest's default features are no longer enabled, so aws-lc-sys (a C/cmake

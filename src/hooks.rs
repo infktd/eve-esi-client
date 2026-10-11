@@ -80,7 +80,7 @@ impl ClientHooks<crate::EsiInner> for Client {
         // Release the worst-case reservation only after the actual spend is
         // recorded, so capacity is never briefly double-counted.
         drop(reservation);
-        let response = result?;
+        let response = normalize_error(result?).await?;
         let Some((cache, key)) = cache else {
             return Ok(response);
         };
@@ -114,6 +114,24 @@ impl ClientHooks<crate::EsiInner> for Client {
         }
         Ok(response)
     }
+}
+
+/// Gives an error response whose body isn't ESI's error JSON one that is,
+/// so the generated code reports it as an `ErrorResponse` with its status;
+/// see [`crate::error`].
+async fn normalize_error(response: reqwest::Response) -> reqwest::Result<reqwest::Response> {
+    let status = response.status();
+    if !(status.is_client_error() || status.is_server_error()) {
+        return Ok(response);
+    }
+    let headers = response.headers().clone();
+    let body = response.bytes().await?;
+    Ok(
+        match crate::error::normalize_error_body(status, &headers, &body) {
+            Some((headers, body)) => replay(status, headers, body),
+            None => replay(status, headers, body),
+        },
+    )
 }
 
 fn replay(

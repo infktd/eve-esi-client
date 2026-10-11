@@ -15,18 +15,53 @@
 //! 4. Hand the token set to [`Authenticator::new`] and pass that to
 //!    [`crate::ClientBuilder::authenticator`] — every request then carries
 //!    a Bearer token, refreshed automatically before expiry.
+//!
+//! # Servers acting for many characters
+//!
+//! - **Web (confidential) applications** registered with a client secret
+//!   pass it to [`SsoClientBuilder::client_secret`]; code exchanges and
+//!   refreshes then authenticate with HTTP Basic, so refresh tokens issued
+//!   to a secret-based application keep working.
+//!   [`SsoClient::authorize_without_pkce`] and
+//!   [`SsoClient::exchange_without_pkce`] serve flows that can't keep a PKCE
+//!   verifier between the login redirect and the callback.
+//! - **One client, many principals**: anything implementing
+//!   [`TokenProvider`] (an [`Authenticator`], a [`StaticToken`], or your own
+//!   database-backed provider) can be attached to a clone of a client with
+//!   [`crate::Client::with_token_provider`] or
+//!   [`crate::Client::with_access_token`]. The clones share error and
+//!   rate limiters and the response cache, which stays keyed by character.
+//! - **Rotated refresh tokens**: EVE may return a new refresh token on every
+//!   refresh. Register a [`RefreshListener`] with
+//!   [`Authenticator::with_listener`] to store them, and to learn when a
+//!   token has been revoked ([`AuthError::is_revoked`]).
+//! - **Claims**: [`TokenClaims`] reads the character, owner hash, scopes and
+//!   expiry from an access token.
 
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::time::{Duration, SystemTime};
 
-use base64::Engine as _;
+use std::sync::Arc;
+
 use oauth2::basic::BasicClient;
 use oauth2::{
-    AuthUrl, AuthorizationCode, ClientId, EndpointNotSet, EndpointSet, PkceCodeChallenge,
-    RedirectUrl, RefreshToken, RequestTokenError, Scope, TokenResponse as _, TokenUrl,
+    AuthUrl, AuthorizationCode, ClientId, ClientSecret, EndpointNotSet, EndpointSet,
+    PkceCodeChallenge, RedirectUrl, RefreshToken, RequestTokenError, Scope, TokenResponse as _,
+    TokenUrl,
 };
+
+mod claims;
+mod provider;
+#[cfg(feature = "verify")]
+mod verify;
+
+pub(crate) use claims::jwt_claim;
+pub use claims::TokenClaims;
+pub use provider::{RefreshListener, StaticToken, TokenProvider};
+#[cfg(feature = "verify")]
+pub use verify::{JwtVerifier, VerifyError, SSO_JWKS_URL};
 
 /// Re-exported from [`oauth2`] because [`PendingAuthorization`] and
 /// [`SsoClient::exchange`] use them: rebuild a stored verifier with
@@ -89,6 +124,24 @@ impl AuthError {
         }
     }
 
+    /// Whether EVE rejected the token or grant itself (`invalid_grant`,
+    /// `invalid_token`): the refresh token is revoked or expired, so discard
+    /// it and have the user log in again.
+    ///
+    /// Narrower than [`AuthError::is_permanent`], which is also `true` for
+    /// failures of the client as a whole (`invalid_client`,
+    /// `unauthorized_client`, e.g. a wrong client secret). A server holding
+    /// tokens for many users should delete a stored token only when this
+    /// returns `true`; a client-level rejection would otherwise wipe every
+    /// user's token at once.
+    pub fn is_revoked(&self) -> bool {
+        matches!(
+            self,
+            AuthError::Rejected { error, .. }
+                if matches!(error.as_str(), "invalid_grant" | "invalid_token")
+        )
+    }
+
     fn from_token_request<RE: std::error::Error + 'static>(
         err: oauth2::basic::BasicRequestTokenError<RE>,
     ) -> Self {
@@ -146,26 +199,59 @@ impl fmt::Display for AuthError {
 
 impl std::error::Error for AuthError {}
 
-/// An EVE SSO application client (PKCE, no client secret).
+/// An EVE SSO application client.
 ///
 /// Register your application at <https://developers.eveonline.com/> to get
-/// a client ID; use "native application" / PKCE, which needs no secret.
+/// a client ID. A "native application" uses PKCE and needs no secret; a web
+/// application with a client secret sets it with
+/// [`SsoClientBuilder::client_secret`].
 pub struct SsoClient {
     oauth: ConfiguredClient,
     http: BridgeClient,
+    confidential: bool,
 }
 
 /// Builds an [`SsoClient`]; start with [`SsoClient::builder`].
-#[derive(Debug)]
 pub struct SsoClientBuilder {
     client_id: String,
     redirect_uri: String,
     authorize_url: Option<String>,
     token_url: Option<String>,
     http_client: Option<reqwest::Client>,
+    client_secret: Option<String>,
+}
+
+impl fmt::Debug for SsoClientBuilder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SsoClientBuilder")
+            .field("client_id", &self.client_id)
+            .field("redirect_uri", &self.redirect_uri)
+            .field("authorize_url", &self.authorize_url)
+            .field("token_url", &self.token_url)
+            .field("http_client", &self.http_client)
+            .field(
+                "client_secret",
+                &self.client_secret.as_ref().map(|_| "<redacted>"),
+            )
+            .finish()
+    }
 }
 
 impl SsoClientBuilder {
+    /// Authenticate token requests with this client secret (HTTP Basic), as
+    /// a confidential "web application" registered with a secret does.
+    ///
+    /// Code exchanges and refreshes then send the secret, which EVE SSO
+    /// requires for refresh tokens it issued to a secret-based application.
+    /// PKCE stays on for [`SsoClient::authorize`] and
+    /// [`SsoClient::exchange`]; with a secret,
+    /// [`SsoClient::authorize_without_pkce`] and
+    /// [`SsoClient::exchange_without_pkce`] also become available.
+    pub fn client_secret(mut self, secret: impl Into<String>) -> Self {
+        self.client_secret = Some(secret.into());
+        self
+    }
+
     /// Where [`SsoClient::authorize`] sends the user (defaults to
     /// [`crate::SSO_AUTHORIZE_URL`]).
     pub fn authorize_url(mut self, url: impl Into<String>) -> Self {
@@ -215,6 +301,11 @@ impl SsoClientBuilder {
                 .map_err(config)?,
             )
             .set_redirect_uri(RedirectUrl::new(self.redirect_uri).map_err(config)?);
+        let confidential = self.client_secret.is_some();
+        let oauth = match self.client_secret {
+            Some(secret) => oauth.set_client_secret(ClientSecret::new(secret)),
+            None => oauth,
+        };
         let http = match self.http_client {
             Some(client) => client,
             None => reqwest::Client::builder()
@@ -228,6 +319,7 @@ impl SsoClientBuilder {
         Ok(SsoClient {
             oauth,
             http: BridgeClient(http),
+            confidential,
         })
     }
 }
@@ -269,7 +361,14 @@ impl SsoClient {
             authorize_url: None,
             token_url: None,
             http_client: None,
+            client_secret: None,
         }
+    }
+
+    /// Whether this client authenticates with a client secret (see
+    /// [`SsoClientBuilder::client_secret`]).
+    pub fn is_confidential(&self) -> bool {
+        self.confidential
     }
 
     /// Build the browser authorization URL for the given ESI scopes
@@ -278,10 +377,21 @@ impl SsoClient {
         &self,
         scopes: impl IntoIterator<Item = S>,
     ) -> PendingAuthorization {
+        self.authorize_with_state(scopes, CsrfToken::new_random())
+    }
+
+    /// Like [`SsoClient::authorize`], with a `state` of your choosing instead
+    /// of a random one, e.g. one that also encodes what the login is for.
+    /// It must still be unguessable to protect the callback against CSRF.
+    pub fn authorize_with_state<S: Into<String>>(
+        &self,
+        scopes: impl IntoIterator<Item = S>,
+        state: CsrfToken,
+    ) -> PendingAuthorization {
         let (challenge, verifier) = PkceCodeChallenge::new_random_sha256();
         let (url, csrf_state) = self
             .oauth
-            .authorize_url(CsrfToken::new_random)
+            .authorize_url(|| state)
             .add_scopes(scopes.into_iter().map(|s| Scope::new(s.into())))
             .set_pkce_challenge(challenge)
             .url();
@@ -289,6 +399,37 @@ impl SsoClient {
             url: url.to_string(),
             pkce_verifier: verifier,
             csrf_state,
+        }
+    }
+
+    /// The browser authorization URL without a PKCE challenge, for a
+    /// confidential client that can't keep a verifier until the callback
+    /// (e.g. a stateless server whose callback page posts the code back).
+    /// Exchange the code with [`SsoClient::exchange_without_pkce`]; the
+    /// client secret authenticates that exchange instead.
+    ///
+    /// Fails with [`AuthError::Config`] unless a client secret is set.
+    pub fn authorize_without_pkce<S: Into<String>>(
+        &self,
+        scopes: impl IntoIterator<Item = S>,
+        state: CsrfToken,
+    ) -> Result<String, AuthError> {
+        self.require_secret("authorize_without_pkce")?;
+        let (url, _) = self
+            .oauth
+            .authorize_url(|| state)
+            .add_scopes(scopes.into_iter().map(|s| Scope::new(s.into())))
+            .url();
+        Ok(url.to_string())
+    }
+
+    fn require_secret(&self, method: &str) -> Result<(), AuthError> {
+        if self.confidential {
+            Ok(())
+        } else {
+            Err(AuthError::Config(format!(
+                "SsoClient::{method} needs a client secret (SsoClientBuilder::client_secret)"
+            )))
         }
     }
 
@@ -308,21 +449,65 @@ impl SsoClient {
         Ok(TokenSet::from_response(&response))
     }
 
-    /// Obtain a fresh token set from a refresh token.
-    pub async fn refresh(&self, refresh_token: &str) -> Result<TokenSet, AuthError> {
+    /// Exchange an authorization code obtained without PKCE (see
+    /// [`SsoClient::authorize_without_pkce`]), authenticating with the
+    /// client secret.
+    ///
+    /// Fails with [`AuthError::Config`] unless a client secret is set.
+    pub async fn exchange_without_pkce(
+        &self,
+        code: impl Into<String>,
+    ) -> Result<TokenSet, AuthError> {
+        self.require_secret("exchange_without_pkce")?;
         let response = self
             .oauth
-            .exchange_refresh_token(&RefreshToken::new(refresh_token.to_string()))
+            .exchange_code(AuthorizationCode::new(code.into()))
             .request_async(&self.http)
             .await
             .map_err(AuthError::from_token_request)?;
         Ok(TokenSet::from_response(&response))
     }
+
+    /// Obtain a fresh token set from a refresh token.
+    ///
+    /// EVE may rotate the refresh token: store the returned
+    /// [`TokenSet::refresh_token`] in place of the one you passed. If the
+    /// response carries no refresh token, the one passed in is kept.
+    pub async fn refresh(&self, refresh_token: &str) -> Result<TokenSet, AuthError> {
+        self.refresh_with_scopes(refresh_token, std::iter::empty::<String>())
+            .await
+    }
+
+    /// Like [`SsoClient::refresh`], requesting `scopes` for the new access
+    /// token (OAuth's `scope` parameter on a refresh). EVE SSO grants at
+    /// most the scopes the refresh token carries; an empty list asks for
+    /// all of them.
+    pub async fn refresh_with_scopes<S: Into<String>>(
+        &self,
+        refresh_token: &str,
+        scopes: impl IntoIterator<Item = S>,
+    ) -> Result<TokenSet, AuthError> {
+        let refresh = RefreshToken::new(refresh_token.to_string());
+        let response = self
+            .oauth
+            .exchange_refresh_token(&refresh)
+            .add_scopes(scopes.into_iter().map(|s| Scope::new(s.into())))
+            .request_async(&self.http)
+            .await
+            .map_err(AuthError::from_token_request)?;
+        let mut tokens = TokenSet::from_response(&response);
+        tokens
+            .refresh_token
+            .get_or_insert_with(|| refresh_token.to_string());
+        Ok(tokens)
+    }
 }
 
 impl fmt::Debug for SsoClient {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("SsoClient").finish_non_exhaustive()
+        f.debug_struct("SsoClient")
+            .field("confidential", &self.confidential)
+            .finish_non_exhaustive()
     }
 }
 
@@ -336,18 +521,33 @@ pub struct TokenSet {
 
 impl TokenSet {
     fn from_response(response: &oauth2::basic::BasicTokenResponse) -> Self {
+        let access_token = response.access_token().secret().clone();
+        let expires_at = match response.expires_in() {
+            Some(d) => Some(SystemTime::now() + d),
+            // Fall back to the JWT's own `exp`.
+            None => TokenClaims::from_jwt_unverified(&access_token).and_then(|c| c.expires_at),
+        };
         Self {
-            access_token: response.access_token().secret().clone(),
+            access_token,
             refresh_token: response.refresh_token().map(|t| t.secret().clone()),
-            expires_at: response.expires_in().map(|d| SystemTime::now() + d),
+            expires_at,
         }
     }
 
-    fn expires_within(&self, margin: Duration) -> bool {
+    /// Whether the access token expires within `margin` from now. `false`
+    /// when the expiry is unknown.
+    pub fn expires_within(&self, margin: Duration) -> bool {
         match self.expires_at {
             Some(at) => SystemTime::now() + margin >= at,
             None => false,
         }
+    }
+
+    /// The access token's claims, read without signature verification (see
+    /// [`TokenClaims::from_jwt_unverified`]). `None` if the access token
+    /// isn't a JWT.
+    pub fn claims(&self) -> Option<TokenClaims> {
+        TokenClaims::from_jwt_unverified(&self.access_token)
     }
 
     /// The authenticated character's ID, from the access token's `sub`
@@ -355,60 +555,111 @@ impl TokenSet {
     /// verification — fine for identifying your own session; do not use it
     /// to authenticate third-party tokens.
     pub fn character_id(&self) -> Option<u64> {
-        self.claim("sub")?
-            .as_str()?
-            .rsplit(':')
-            .next()?
-            .parse()
-            .ok()
+        self.claims()?.character_id
     }
 
     /// The authenticated character's name, from the token's `name` claim.
     /// Unverified; see [`TokenSet::character_id`].
     pub fn character_name(&self) -> Option<String> {
-        Some(self.claim("name")?.as_str()?.to_string())
+        self.claims()?.name
     }
 
-    fn claim(&self, name: &str) -> Option<serde_json::Value> {
-        jwt_claim(&self.access_token, name)
+    /// The scopes granted to the access token (its `scp` claim). Empty if
+    /// none were granted or the token isn't a JWT. Unverified; see
+    /// [`TokenSet::character_id`].
+    pub fn scopes(&self) -> Vec<String> {
+        self.claims().map(|c| c.scopes).unwrap_or_default()
     }
-}
 
-/// A claim from a JWT's payload, read without verifying its signature.
-pub(crate) fn jwt_claim(token: &str, name: &str) -> Option<serde_json::Value> {
-    let payload = token.split('.').nth(1)?;
-    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
-        .decode(payload)
-        .ok()?;
-    let mut claims: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-    Some(claims.get_mut(name)?.take())
+    /// The character owner hash (the `owner` claim), which changes when the
+    /// character is transferred to another account. Unverified; see
+    /// [`TokenSet::character_id`].
+    pub fn owner_hash(&self) -> Option<String> {
+        self.claims()?.owner
+    }
 }
 
 /// Owns a [`TokenSet`] and refreshes it before expiry. Pass to
-/// [`crate::ClientBuilder::authenticator`] to authenticate every request.
+/// [`crate::ClientBuilder::authenticator`] to authenticate every request, or
+/// use it as a [`TokenProvider`] with [`crate::Client::with_token_provider`].
 pub struct Authenticator {
-    sso: SsoClient,
+    sso: Arc<SsoClient>,
     tokens: tokio::sync::Mutex<TokenSet>,
+    scopes: Vec<String>,
+    listener: Option<Arc<dyn RefreshListener>>,
 }
+
+/// How long before expiry the held access token is refreshed.
+const REFRESH_MARGIN: Duration = Duration::from_secs(60);
 
 impl Authenticator {
     pub fn new(sso: SsoClient, tokens: TokenSet) -> Self {
+        Self::with_shared_client(Arc::new(sso), tokens)
+    }
+
+    /// Like [`Authenticator::new`], sharing one [`SsoClient`] (and its HTTP
+    /// connection pool) between the authenticators of many characters.
+    pub fn with_shared_client(sso: Arc<SsoClient>, tokens: TokenSet) -> Self {
         Self {
             sso,
             tokens: tokio::sync::Mutex::new(tokens),
+            scopes: Vec::new(),
+            listener: None,
         }
+    }
+
+    /// Notify `listener` after every refresh attempt, e.g. to store the
+    /// rotated refresh token or drop a revoked one. See [`RefreshListener`].
+    pub fn with_listener(mut self, listener: Arc<dyn RefreshListener>) -> Self {
+        self.listener = Some(listener);
+        self
+    }
+
+    /// Request these scopes on every refresh (see
+    /// [`SsoClient::refresh_with_scopes`]). By default none are named, so
+    /// the new access token carries every scope the refresh token has.
+    pub fn with_refresh_scopes<S: Into<String>>(
+        mut self,
+        scopes: impl IntoIterator<Item = S>,
+    ) -> Self {
+        self.scopes = scopes.into_iter().map(Into::into).collect();
+        self
     }
 
     /// A currently-valid access token, refreshing first if the held one
     /// expires within the next minute.
+    ///
+    /// Concurrent callers wait for a single refresh. A [`RefreshListener`]
+    /// runs before the lock is released, so stored tokens are always written
+    /// in the order EVE issued them.
     pub async fn access_token(&self) -> Result<String, AuthError> {
         let mut tokens = self.tokens.lock().await;
-        if tokens.expires_within(Duration::from_secs(60)) {
-            let refresh = tokens
-                .refresh_token
-                .clone()
-                .ok_or(AuthError::NoRefreshToken)?;
-            *tokens = self.sso.refresh(&refresh).await?;
+        if tokens.expires_within(REFRESH_MARGIN) {
+            let Some(refresh) = tokens.refresh_token.clone() else {
+                let err = AuthError::NoRefreshToken;
+                if let Some(listener) = &self.listener {
+                    listener.refresh_failed(&tokens, &err).await;
+                }
+                return Err(err);
+            };
+            match self
+                .sso
+                .refresh_with_scopes(&refresh, self.scopes.iter().cloned())
+                .await
+            {
+                Ok(fresh) => {
+                    *tokens = fresh;
+                    if let Some(listener) = &self.listener {
+                        listener.refreshed(&tokens).await;
+                    }
+                }
+                Err(err) => {
+                    if let Some(listener) = &self.listener {
+                        listener.refresh_failed(&tokens, &err).await;
+                    }
+                    return Err(err);
+                }
+            }
         }
         Ok(tokens.access_token.clone())
     }
@@ -416,6 +667,13 @@ impl Authenticator {
     /// Snapshot of the current tokens (e.g. to persist the refresh token).
     pub async fn tokens(&self) -> TokenSet {
         self.tokens.lock().await.clone()
+    }
+}
+
+#[async_trait::async_trait]
+impl TokenProvider for Authenticator {
+    async fn access_token(&self) -> Result<String, AuthError> {
+        Authenticator::access_token(self).await
     }
 }
 
@@ -462,7 +720,11 @@ impl<'c> oauth2::AsyncHttpClient<'c> for BridgeClient {
     fn call(&'c self, request: oauth2::HttpRequest) -> Self::Future {
         Box::pin(async move {
             let request = reqwest::Request::try_from(request).map_err(BridgeError::Reqwest)?;
-            let response = self.0.execute(request).await.map_err(BridgeError::Reqwest)?;
+            let response = self
+                .0
+                .execute(request)
+                .await
+                .map_err(BridgeError::Reqwest)?;
             let mut builder = http::Response::builder().status(response.status().as_u16());
             for (name, value) in response.headers() {
                 builder = builder.header(name.as_str(), value.as_bytes());

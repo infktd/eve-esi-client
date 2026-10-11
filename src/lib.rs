@@ -23,7 +23,13 @@
 //!   revalidated with `If-None-Match`, transparently resurrecting the body
 //!   on `304 Not Modified`. See the [`cache`] module.
 //! - **SSO** — EVE's OAuth2/PKCE flow ([`auth`]), with automatic token
-//!   refresh on every request via [`ClientBuilder::authenticator`].
+//!   refresh on every request via [`ClientBuilder::authenticator`], and
+//!   client secrets for web applications.
+//! - **Many principals, one budget** — [`Client::with_token_provider`] and
+//!   [`Client::with_access_token`] make requests as another character while
+//!   sharing the error and rate limiters and the (character-keyed) cache.
+//! - **Readable errors** — an error response's status and ESI message are
+//!   always available ([`ErrorExt`]), even when the body wasn't ESI's JSON.
 //! - The ESI-required `X-Compatibility-Date` header is injected on every
 //!   request, pinned to the exact date this crate's types were generated
 //!   against ([`COMPATIBILITY_DATE`]).
@@ -76,6 +82,7 @@ compile_error!(
 
 pub mod auth;
 pub mod cache;
+pub mod error;
 mod hooks;
 mod limiter;
 mod rate_limit;
@@ -96,6 +103,7 @@ use reqwest::header::{HeaderMap, HeaderValue, USER_AGENT};
 
 pub use async_trait::async_trait;
 pub use cache::{CacheKey, CachedResponse, EsiCache, MemoryCache};
+pub use error::ErrorExt;
 pub use generated::*;
 pub use oauth2;
 
@@ -108,16 +116,16 @@ pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 pub const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Shared per-client state consulted by the request hooks: rate-limit
-/// bookkeeping, optional authenticator, optional HTTP cache.
+/// bookkeeping, optional token provider, optional HTTP cache.
 ///
 /// Constructed by [`ClientBuilder`]. Clones share the same limiters, cache
-/// and authenticator; `EsiInner::default()` has fresh limiters and no cache.
+/// and token provider; `EsiInner::default()` has fresh limiters and no cache.
 #[derive(Clone, Default)]
 pub struct EsiInner {
     pub(crate) limiter: Arc<limiter::ErrorLimiter>,
     pub(crate) rate_limiter: Arc<rate_limit::RateLimiter>,
     pub(crate) cache: Option<Arc<dyn EsiCache>>,
-    pub(crate) auth: Option<Arc<auth::Authenticator>>,
+    pub(crate) auth: Option<Arc<dyn auth::TokenProvider>>,
     /// Set on every request that doesn't already carry them.
     pub(crate) default_headers: HeaderMap,
 }
@@ -130,6 +138,21 @@ impl EsiInner {
     pub fn without_cache(&self) -> EsiInner {
         EsiInner {
             cache: None,
+            ..self.clone()
+        }
+    }
+
+    /// The same state authenticating as another principal: shares this
+    /// one's error and rate limiters, cache and default headers, but every
+    /// request takes its bearer token from `provider`. `None` sends requests
+    /// unauthenticated.
+    ///
+    /// The cache stays safe to share: entries are keyed by the bearer
+    /// token's `sub`, so one character's responses are never served to
+    /// another.
+    pub fn with_auth(&self, provider: Option<Arc<dyn auth::TokenProvider>>) -> EsiInner {
+        EsiInner {
+            auth: provider,
             ..self.clone()
         }
     }
@@ -156,7 +179,7 @@ impl fmt::Debug for EsiInner {
             .field("limiter", &self.limiter)
             .field("rate_limiter", &self.rate_limiter)
             .field("cache", &self.cache.as_ref().map(|_| "EsiCache"))
-            .field("auth", &self.auth)
+            .field("auth", &self.auth.as_ref().map(|_| "TokenProvider"))
             .field("default_headers", &self.default_headers)
             .finish()
     }
@@ -199,6 +222,54 @@ impl Client {
         ClientBuilder::new()
     }
 
+    /// A client that makes the same requests as `provider`'s principal.
+    ///
+    /// It shares this client's base URL, HTTP connection pool, error and
+    /// rate limiters, cache and default headers, so a server acting for
+    /// many characters keeps one ESI budget and one cache however many
+    /// characters it serves. Cheap enough to build one per request.
+    ///
+    /// ```no_run
+    /// # use std::sync::Arc;
+    /// # async fn run(client: eve_esi_client::Client, alice: eve_esi_client::auth::Authenticator) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    /// let as_alice = client.with_token_provider(Arc::new(alice));
+    /// let fleet = as_alice
+    ///     .get_characters_character_id_fleet()
+    ///     .character_id(2112625428)
+    ///     .send()
+    ///     .await?;
+    /// # Ok(())
+    /// # }
+    /// ```
+    pub fn with_token_provider(&self, provider: Arc<dyn auth::TokenProvider>) -> Client {
+        self.with_inner(self.inner.with_auth(Some(provider)))
+    }
+
+    /// A client that sends `access_token` as the bearer token of every
+    /// request, as-is (see [`auth::StaticToken`]); otherwise like
+    /// [`Client::with_token_provider`].
+    ///
+    /// Useful when the caller obtains the token itself, e.g. from a
+    /// database with its own refresh and scope checks, and wants those
+    /// failures typed rather than folded into [`Error::Custom`].
+    pub fn with_access_token(&self, access_token: impl Into<String>) -> Client {
+        self.with_token_provider(Arc::new(auth::StaticToken::new(access_token)))
+    }
+
+    /// A client sending requests unauthenticated, sharing this one's limits
+    /// and cache; otherwise like [`Client::with_token_provider`].
+    pub fn without_auth(&self) -> Client {
+        self.with_inner(self.inner.with_auth(None))
+    }
+
+    fn with_inner(&self, inner: EsiInner) -> Client {
+        Client {
+            baseurl: self.baseurl.clone(),
+            client: self.client.clone(),
+            inner,
+        }
+    }
+
     /// Shorthand for `client.inner().error_budget()`; see
     /// [`EsiInner::error_budget`].
     pub fn error_budget(&self) -> Option<ErrorBudget> {
@@ -217,7 +288,7 @@ impl Client {
 pub struct ClientBuilder {
     user_agent: Option<String>,
     base_url: Option<String>,
-    authenticator: Option<Arc<auth::Authenticator>>,
+    authenticator: Option<Arc<dyn auth::TokenProvider>>,
     http_cache: Option<bool>,
     cache: Option<Arc<dyn EsiCache>>,
     http_client: Option<reqwest::Client>,
@@ -248,6 +319,14 @@ impl ClientBuilder {
     /// automatically. See the [`auth`] module for the full flow.
     pub fn authenticator(mut self, value: auth::Authenticator) -> Self {
         self.authenticator = Some(Arc::new(value));
+        self
+    }
+
+    /// Authenticate every request with tokens from `provider`, e.g. a
+    /// shared [`auth::Authenticator`] or your own [`auth::TokenProvider`].
+    /// Replaces an earlier [`ClientBuilder::authenticator`].
+    pub fn token_provider(mut self, provider: Arc<dyn auth::TokenProvider>) -> Self {
+        self.authenticator = Some(provider);
         self
     }
 
@@ -331,7 +410,10 @@ impl fmt::Debug for ClientBuilder {
         f.debug_struct("ClientBuilder")
             .field("user_agent", &self.user_agent)
             .field("base_url", &self.base_url)
-            .field("authenticator", &self.authenticator)
+            .field(
+                "authenticator",
+                &self.authenticator.as_ref().map(|_| "TokenProvider"),
+            )
             .field("http_cache", &self.http_cache)
             .field("cache", &self.cache.as_ref().map(|_| "EsiCache"))
             .field("http_client", &self.http_client)
