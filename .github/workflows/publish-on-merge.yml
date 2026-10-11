@@ -14,8 +14,15 @@ name: publish-on-merge
 #   * `[bump:skip]`        -> no release (use for the rare code change you
 #                             don't want shipped on its own).
 #
+# Markers are read from EVERY commit in the push (not just the merge commit),
+# so a `[bump:minor]` on a PR's commit survives a merge commit with a custom
+# message. The highest level found wins; `[bump:skip]` only applies when it
+# is on the head commit.
+#
 # The version is derived from what's actually live on crates.io and bumped,
-# so the repo can never drift out of sync with the registry. A failed
+# so the repo can never drift out of sync with the registry. If Cargo.toml
+# already declares a higher version (a hand-prepared release), that version
+# is used instead of being overwritten. A failed
 # publish leaves main untouched; the next merge retries cleanly.
 #
 # Manual dispatch offers the same thing with an explicit level (incl. major),
@@ -51,7 +58,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.ref_name }}
           fetch-depth: 0
@@ -62,16 +69,27 @@ jobs:
 
       - name: Determine bump level
         id: level
+        env:
+          BEFORE: ${{ github.event.before }}
         run: |
+          set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             level="${{ inputs.level }}"
           else
-            msg=$(git log -1 --format=%B)
-            if printf '%s' "$msg" | grep -qiE '\[bump:skip\]'; then
+            head_msg=$(git log -1 --format=%B)
+            # All commits in this push. A first push (or a force push whose
+            # base is gone) has no usable BEFORE, so fall back to HEAD alone.
+            if [ -n "${BEFORE:-}" ] && ! printf '%s' "$BEFORE" | grep -qE '^0+$' \
+               && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              msgs=$(git log --format=%B "$BEFORE..HEAD")
+            else
+              msgs="$head_msg"
+            fi
+            if printf '%s' "$head_msg" | grep -qiE '\[bump:skip\]'; then
               level=skip
-            elif printf '%s' "$msg" | grep -qiE '\[bump:major\]'; then
+            elif printf '%s' "$msgs" | grep -qiE '\[bump:major\]'; then
               level=major
-            elif printf '%s' "$msg" | grep -qiE '\[bump:minor\]|BREAKING CHANGE'; then
+            elif printf '%s' "$msgs" | grep -qiE '\[bump:minor\]|BREAKING CHANGE'; then
               # A breaking change is the minor slot pre-1.0. spec-check stamps
               # [bump:minor] onto breaking spec PRs; hand-written commits can
               # use [bump:minor] or a "BREAKING CHANGE" footer.
@@ -106,6 +124,14 @@ jobs:
             *) echo "unknown level"; exit 1 ;;
           esac
           next="${major}.${minor}.${patch}"
+          # Never go below a version already declared in Cargo.toml: a
+          # hand-prepared release (e.g. alongside a CHANGELOG entry) wins.
+          declared=$(grep -m1 '^version = ' Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          if [ "$(printf '%s\n%s\n' "$next" "$declared" | sort -V | tail -1)" = "$declared" ] \
+             && [ "$declared" != "$current" ]; then
+            echo "Cargo.toml declares $declared (>= computed $next); using it"
+            next="$declared"
+          fi
           echo "current=$current" >> "$GITHUB_OUTPUT"
           echo "next=$next" >> "$GITHUB_OUTPUT"
           echo "releasing $current -> $next"

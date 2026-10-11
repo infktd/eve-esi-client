@@ -23,7 +23,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -84,7 +84,7 @@ jobs:
 
       - name: Open a PR with the spec update
         if: steps.detect.outputs.changed == 'true' && steps.build.outcome == 'success'
-        uses: peter-evans/create-pull-request@v7
+        uses: peter-evans/create-pull-request@v8
         with:
           branch: spec-update
           # The marker rides in both title and commit message so it survives
