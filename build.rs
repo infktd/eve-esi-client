@@ -126,10 +126,10 @@ fn main() {
     let spec: openapiv3::OpenAPI =
         serde_json::from_value(raw).expect("spec failed to parse as OpenAPI 3.0");
 
-    let mut settings = progenitor::GenerationSettings::default();
-    settings.with_interface(progenitor::InterfaceStyle::Builder);
+    let mut settings = progenitor_impl::GenerationSettings::default();
+    settings.with_interface(progenitor_impl::InterfaceStyle::Builder);
     settings.with_inner_type("crate::EsiInner".parse().unwrap());
-    let mut generator = progenitor::Generator::new(&settings);
+    let mut generator = progenitor_impl::Generator::new(&settings);
     let tokens = generator
         .generate_tokens(&spec)
         .expect("progenitor failed to generate client");

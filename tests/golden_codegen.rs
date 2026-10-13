@@ -55,10 +55,10 @@ fn every_operation_in_the_pinned_spec_generates_a_method() {
 
     let spec: openapiv3::OpenAPI =
         serde_json::from_value(spec_json).expect("normalized spec must parse as OpenAPI 3.0");
-    let mut settings = progenitor::GenerationSettings::default();
-    settings.with_interface(progenitor::InterfaceStyle::Builder);
+    let mut settings = progenitor_impl::GenerationSettings::default();
+    settings.with_interface(progenitor_impl::InterfaceStyle::Builder);
     settings.with_inner_type("crate::EsiInner".parse().unwrap());
-    let tokens = progenitor::Generator::new(&settings)
+    let tokens = progenitor_impl::Generator::new(&settings)
         .generate_tokens(&spec)
         .expect("progenitor must generate the pinned spec");
     let text = tokens.to_string();

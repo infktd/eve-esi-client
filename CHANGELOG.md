@@ -4,6 +4,15 @@ Changes to the crate itself. Routine spec refreshes are released
 automatically and listed on the
 [GitHub releases page](https://github.com/infktd/eve-esi-client/releases).
 
+## Unreleased
+
+- Code generation now uses `progenitor-impl` 0.15 (the generator) instead of the `progenitor`
+  0.14 facade as a build dependency. The facade pulled in progenitor's proc-macro and, through it,
+  the deprecated `serde_yaml` and unmaintained `unsafe-libyaml` (RUSTSEC-2024-0449), which made
+  `cargo deny` fail in every downstream project. Nothing in them ran at runtime.
+- `progenitor-client` 0.14 → 0.15. Its `Error` and `ResponseValue` types appear in this crate's
+  public API, so this is a minor (breaking, pre-1.0) release.
+
 ## 0.6.0
 
 Server support: one client acting for many characters. Everything here is
